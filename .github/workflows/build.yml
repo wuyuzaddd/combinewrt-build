@@ -95,7 +95,7 @@ jobs:
           gzip -t "$IMG"
           SHA=$(sha256sum "$IMG" | cut -d' ' -f1)
           SIZE=$(stat -c%s "$IMG")
-          jq -n --arg artifactName "$ARTIFACT" --arg sha256 "$SHA" --argjson size "$SIZE" \
+          jq -c -n --arg artifactName "$ARTIFACT" --arg sha256 "$SHA" --argjson size "$SIZE" \
             '{artifactName:$artifactName,sha256:$sha256,size:$size}' > manifest.json
           cat manifest.json
           echo "COMBINEWRT_MANIFEST=$(cat manifest.json)"
