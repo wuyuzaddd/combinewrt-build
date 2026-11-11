@@ -33,7 +33,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd jq qemu-utils
+          sudo apt-get install -y -qq zstd jq
 
       - name: Download ImageBuilder
         env:
@@ -76,7 +76,8 @@ jobs:
           echo "COMBINEWRT_PROFILE=$PROFILE"
           echo "COMBINEWRT_PACKAGES=$PACKAGES"
           echo "COMBINEWRT_MAKE=make -j$(nproc) image PROFILE=\"$PROFILE\" PACKAGES=\"$PACKAGES\" FILES=files"
-          make -j"$(nproc)" image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES=files 2>&1 | tee build.log
+          make -j"$(nproc)" image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES=files \
+            CONFIG_ISO_IMAGES= CONFIG_QCOW2_IMAGES= CONFIG_VDI_IMAGES= CONFIG_VMDK_IMAGES= CONFIG_VHDX_IMAGES= 2>&1 | tee build.log
 
       - name: Package artifact
         env:
