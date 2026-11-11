@@ -177,14 +177,19 @@ jobs:
             exit 1
           fi
           mkdir -p /tmp/artifacts
-          apk_file="$(ls bin/packages/x86_64/extra/${PKG}-*.apk | head -1)"
-          cp "$apk_file" "/tmp/artifacts/${PKG}.apk"
-          arch="$(staging_dir/host/bin/apk adbdump "$apk_file" | awk '/arch:/{print $2; exit}')"
-          python3 - "$apk_file" "$PKG" "${{ matrix.sourceHash }}" "${arch:-x86_64}" <<'PY'
+          apk_file="$(ls bin/packages/x86_64/extra/*.apk 2>/dev/null | head -1)"
+          if [ -z "$apk_file" ]; then
+            echo "COMBINEWRT_FAILED_PACKAGE=$PKG (no apk produced)"
+            exit 1
+          fi
+          dump="$(staging_dir/host/bin/apk adbdump "$apk_file")"
+          name="$(printf '%s\n' "$dump" | awk '/^[[:space:]]*name:/{print $2; exit}')"
+          version="$(printf '%s\n' "$dump" | awk '/^[[:space:]]*version:/{print $2; exit}')"
+          arch="$(printf '%s\n' "$dump" | awk '/^[[:space:]]*arch:/{print $2; exit}')"
+          cp "$apk_file" "/tmp/artifacts/${name}.apk"
+          python3 - "$apk_file" "$name" "$version" "${{ matrix.sourceHash }}" "${arch:-x86_64}" <<'PY'
           import hashlib, json, os, sys
-          path, name, source_hash, arch = sys.argv[1:5]
-          base = os.path.basename(path)
-          version = base[len(name) + 1 : -len(".apk")]
+          path, name, version, source_hash, arch = sys.argv[1:6]
           with open(path, "rb") as handle:
               digest = hashlib.sha256(handle.read()).hexdigest()
           entry = {
