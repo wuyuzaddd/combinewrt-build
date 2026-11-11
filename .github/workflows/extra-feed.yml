@@ -53,7 +53,10 @@ jobs:
           git clone --filter=blob:none "https://github.com/$OP_PACKAGES_REPO" /tmp/op-packages
           git -C /tmp/op-packages checkout "$OP_COMMIT"
           mkdir -p /tmp/extra
-          for p in $PACKAGES; do cp -a "/tmp/op-packages/$p" "/tmp/extra/$p"; done
+          for p in $PACKAGES; do
+            cp -a "/tmp/op-packages/$p" "/tmp/extra/$p"
+            sed -i -E 's/^(PKG_VERSION:=.*)-r[0-9]+$/\1/' "/tmp/extra/$p/Makefile"
+          done
 
       - name: Set up feeds
         run: |
