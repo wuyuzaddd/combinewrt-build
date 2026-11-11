@@ -154,6 +154,9 @@ jobs:
           cp -a "/tmp/op-packages/$PKG" "/tmp/extra/$PKG"
           sed -i -E 's/^(PKG_VERSION:=.*)-r[0-9]+$/\1/' "/tmp/extra/$PKG/Makefile"
           sed -i -E 's/\+kmod-[A-Za-z0-9_-]+//g' "/tmp/extra/$PKG/Makefile"
+          if [ "$PKG" = "luci-app-mosdns" ]; then
+            rm -f "/tmp/extra/$PKG/root/etc/init.d/mosdns"
+          fi
 
       - name: Build package
         env:
@@ -164,6 +167,10 @@ jobs:
           echo "src-link extra /tmp/extra" >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          mkdir -p package/feeds/extra
+          if [ ! -e "package/feeds/extra/$PKG" ]; then
+            ln -s "/tmp/extra/$PKG" "package/feeds/extra/$PKG"
+          fi
           make defconfig
           ok=0
           for attempt in 1 2 3 4; do
@@ -186,7 +193,7 @@ jobs:
           name="$(printf '%s\n' "$dump" | awk '/^[[:space:]]*name:/{print $2; exit}')"
           version="$(printf '%s\n' "$dump" | awk '/^[[:space:]]*version:/{print $2; exit}')"
           arch="$(printf '%s\n' "$dump" | awk '/^[[:space:]]*arch:/{print $2; exit}')"
-          cp "$apk_file" "/tmp/artifacts/${name}.apk"
+          cp "$apk_file" "/tmp/artifacts/${name}-${version}.apk"
           python3 - "$apk_file" "$name" "$version" "${{ matrix.sourceHash }}" "${arch:-x86_64}" <<'PY'
           import hashlib, json, os, sys
           path, name, version, source_hash, arch = sys.argv[1:6]
@@ -197,7 +204,7 @@ jobs:
               "version": version,
               "arch": arch,
               "sourceHash": source_hash,
-              "filename": f"{name}.apk",
+              "filename": f"{name}-{version}.apk",
               "sha256": digest,
               "size": os.path.getsize(path),
               "status": "ok",
@@ -271,7 +278,7 @@ jobs:
                   "version": previous.get("version", "0"),
                   "arch": previous.get("arch", "x86_64"),
                   "sourceHash": source,
-                  "filename": f"{name}.apk",
+                  "filename": f"{name}-{version}.apk",
                   "sha256": previous.get("sha256", ""),
                   "size": previous.get("size", 0),
                   "status": "failed",
