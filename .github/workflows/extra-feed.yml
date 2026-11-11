@@ -168,9 +168,8 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           mkdir -p package/feeds/extra
-          if [ ! -e "package/feeds/extra/$PKG" ]; then
-            ln -s "/tmp/extra/$PKG" "package/feeds/extra/$PKG"
-          fi
+          rm -rf "package/feeds/extra/$PKG"
+          ln -s "/tmp/extra/$PKG" "package/feeds/extra/$PKG"
           make defconfig
           ok=0
           for attempt in 1 2 3 4; do
