@@ -53,6 +53,7 @@ jobs:
           PLAN: ${{ inputs.plan }}
         run: |
           set -euo pipefail
+          cd ib
           echo "$PLAN" | jq -c '.files[]' | while IFS= read -r file; do
             path=$(echo "$file" | jq -r .path)
             mode=$(echo "$file" | jq -r '.mode // 420')
@@ -69,6 +70,7 @@ jobs:
           PLAN: ${{ inputs.plan }}
         run: |
           set -euo pipefail
+          cd ib
           PROFILE=$(echo "$PLAN" | jq -r .profileId)
           PACKAGES=$(echo "$PLAN" | jq -r '.packages | join(" ")')
           echo "COMBINEWRT_PROFILE=$PROFILE"
@@ -81,6 +83,7 @@ jobs:
           PLAN: ${{ inputs.plan }}
         run: |
           set -euo pipefail
+          cd ib
           ARTIFACT=$(echo "$PLAN" | jq -r .artifactName)
           IMG=$(find bin/targets -type f -name "$ARTIFACT" | head -1)
           if [ -z "$IMG" ]; then
@@ -95,7 +98,8 @@ jobs:
             '{artifactName:$artifactName,sha256:$sha256,size:$size}' > manifest.json
           cat manifest.json
           echo "COMBINEWRT_MANIFEST=$(cat manifest.json)"
-          echo "ARTIFACT_PATH=$IMG" >> "$GITHUB_ENV"
+          echo "ARTIFACT_PATH=$PWD/$IMG" >> "$GITHUB_ENV"
+          echo "MANIFEST_PATH=$PWD/manifest.json" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -103,6 +107,6 @@ jobs:
           name: ${{ env.PLAN_ARTIFACT }}
           path: |
             ${{ env.ARTIFACT_PATH }}
-            manifest.json
+            ${{ env.MANIFEST_PATH }}
           retention-days: 7
           if-no-files-found: error
