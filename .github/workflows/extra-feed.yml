@@ -277,12 +277,23 @@ jobs:
                   "version": previous.get("version", "0"),
                   "arch": previous.get("arch", "x86_64"),
                   "sourceHash": source,
-                  "filename": f"{name}-{version}.apk",
+                  "filename": previous.get("filename") or f"{name}-{previous.get('version', '0')}.apk",
                   "sha256": previous.get("sha256", ""),
                   "size": previous.get("size", 0),
                   "status": "failed",
                   "attempts": previous.get("attempts", 0) + 1,
               }
+
+          for name, entry in merged.items():
+              wanted = f"{entry['name']}-{entry['version']}.apk"
+              current = entry.get("filename", "")
+              if current != wanted:
+                  source = f"/tmp/apks/{current}"
+                  target = f"/tmp/apks/{wanted}"
+                  if os.path.exists(source):
+                      os.replace(source, target)
+                  if os.path.exists(target):
+                      entry["filename"] = wanted
 
           manifest = {
               "opPackagesCommit": plan.get("commit", ""),
