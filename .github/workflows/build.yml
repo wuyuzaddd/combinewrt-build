@@ -1,4 +1,4 @@
-name: image
+name: combinewrt image
 
 on:
   workflow_dispatch:
@@ -62,8 +62,7 @@ jobs:
             chmod "$(printf '%o' "$mode")" "$path"
           done
           find files -type f | sort
-          echo '--- uci-defaults ---'
-          cat files/etc/uci-defaults/99-combinewrt
+          echo 'uci-defaults written (contents not printed: they contain the root password hash)'
 
       - name: Build image
         env:
@@ -95,8 +94,8 @@ jobs:
           gzip -t "$IMG"
           SHA=$(sha256sum "$IMG" | cut -d' ' -f1)
           SIZE=$(stat -c%s "$IMG")
-          jq -c -n --arg artifactName "$ARTIFACT" --arg sha256 "$SHA" --argjson size "$SIZE" \
-            '{artifactName:$artifactName,sha256:$sha256,size:$size}' > manifest.json
+          jq -c -n --arg artifactName "$ARTIFACT" --arg path "$PWD/$IMG" --arg sha256 "$SHA" --argjson size "$SIZE" \
+            '{artifactName:$artifactName,path:$path,sha256:$sha256,size:$size}' > manifest.json
           cat manifest.json
           echo "COMBINEWRT_MANIFEST=$(cat manifest.json)"
           echo "ARTIFACT_PATH=$PWD/$IMG" >> "$GITHUB_ENV"
