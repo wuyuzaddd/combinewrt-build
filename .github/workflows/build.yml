@@ -37,6 +37,21 @@ jobs:
           mkdir ib
           tar --zstd -xf ib.tar.zst -C ib --strip-components=1
 
+      - name: Add extra feed packages
+        run: |
+          set -euo pipefail
+          git fetch --depth 1 origin extra-feed || true
+          if git rev-parse --verify FETCH_HEAD >/dev/null 2>&1; then
+            rm -rf /tmp/extra-feed /tmp/extra-apks
+            mkdir -p /tmp/extra-feed /tmp/extra-apks
+            git archive FETCH_HEAD | tar -x -C /tmp/extra-feed
+            if [ -f /tmp/extra-feed/extra-feed.tar.gz ]; then
+              tar -xzf /tmp/extra-feed/extra-feed.tar.gz -C /tmp/extra-apks
+              cp /tmp/extra-apks/*.apk ib/packages/
+              echo "extra feed packages: $(ls /tmp/extra-apks/*.apk | wc -l)"
+            fi
+          fi
+
       - name: Write files
         run: |
           set -euo pipefail
