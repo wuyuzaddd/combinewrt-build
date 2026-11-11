@@ -164,6 +164,7 @@ jobs:
           echo "src-link extra /tmp/extra" >> feeds.conf
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          make defconfig
           ok=0
           for attempt in 1 2 3 4; do
             echo "::group::build $PKG attempt $attempt"
