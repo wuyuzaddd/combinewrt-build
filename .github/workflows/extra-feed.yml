@@ -1,147 +1,307 @@
-name: combinewrt extra feed
+name: extra-feed
 
 on:
   workflow_dispatch:
     inputs:
       op_packages_commit:
-        description: op-packages commit to build
+        description: "op-packages commit (default: latest main)"
         required: false
-        default: 18b7d51c1
+      packages:
+        description: 'comma separated package names, or "all"'
+        required: false
+        default: all
+      force:
+        description: "rebuild even when the cache is fresh"
+        type: boolean
+        default: false
   repository_dispatch:
     types: [extra-feed]
+  schedule:
+    - cron: "0 18 * * *"
 
 permissions:
   contents: write
   actions: read
 
+concurrency:
+  group: extra-feed
+  cancel-in-progress: false
+
+env:
+  SDK_URL: https://downloads.immortalwrt.org/releases/25.12.2/targets/x86/64/immortalwrt-sdk-25.12.2-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+  RELEASE_TAG: extra-feed-cache
+  OP_REPO: wuyuzaddd/op-packages
+  ALL_PACKAGES: "luci-app-lucky,lucky,luci-app-subconverter,luci-app-fastnet,fastnet,linkease-app-entry,luci-lib-linkeaseauth,luci-app-bandix,openwrt-bandix,luci-app-store,luci-lib-taskd,luci-app-wrtbwmon,wrtbwmon,luci-app-webdav,luci-app-substore,luci-app-partexp,luci-app-mosdns,geo2txt,luci-app-ipsec-server,luci-app-fwlive,luci-app-gately,gately"
+
 jobs:
-  extra-feed:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    env:
-      SDK_URL: https://downloads.immortalwrt.org/releases/25.12.2/targets/x86/64/immortalwrt-sdk-25.12.2-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
-      OP_PACKAGES_REPO: kiddin9/op-packages
-      PACKAGES: >-
-        luci-app-lucky lucky luci-app-subconverter luci-app-fastnet fastnet
-        linkease-app-entry luci-lib-linkeaseauth luci-app-bandix openwrt-bandix
-        luci-app-store luci-lib-taskd luci-app-wrtbwmon wrtbwmon luci-app-webdav
-        luci-app-substore luci-app-partexp luci-app-mosdns geo2txt
-        luci-app-ipsec-server luci-app-fwlive luci-app-gately gately
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+      commit: ${{ steps.commit.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Resolve op-packages commit
+      - id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          commit="${{ github.event.client_payload.op_packages_commit }}"
-          [ -n "$commit" ] || commit="${{ inputs.op_packages_commit }}"
-          [ -n "$commit" ] || commit="18b7d51c1"
-          echo "OP_COMMIT=$commit" >> "$GITHUB_ENV"
-
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y zstd python3-yaml
-
-      - name: Download SDK
-        run: |
-          curl -fsSL "$SDK_URL" -o /tmp/sdk.tar.zst
-          mkdir -p sdk
-          tar --zstd -xf /tmp/sdk.tar.zst -C sdk --strip-components=1
+          if [ -n "${{ github.event.inputs.op_packages_commit }}" ]; then
+            commit="${{ github.event.inputs.op_packages_commit }}"
+          else
+            commit="$(gh api "repos/$OP_REPO/commits/main" --jq .sha)"
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
       - name: Fetch op-packages
+        env:
+          COMMIT: ${{ steps.commit.outputs.commit }}
         run: |
-          git clone --filter=blob:none "https://github.com/$OP_PACKAGES_REPO" /tmp/op-packages
-          git -C /tmp/op-packages checkout "$OP_COMMIT"
-          mkdir -p /tmp/extra
-          for p in $PACKAGES; do
-            cp -a "/tmp/op-packages/$p" "/tmp/extra/$p"
-            sed -i -E 's/^(PKG_VERSION:=.*)-r[0-9]+$/\1/' "/tmp/extra/$p/Makefile"
-          done
+          git clone --filter=blob:none --no-checkout "https://github.com/$OP_REPO" /tmp/op-packages
+          git -C /tmp/op-packages checkout "$COMMIT"
 
-      - name: Set up feeds
-        run: |
-          cd sdk
-          cp feeds.conf.default feeds.conf 2>/dev/null || true
-          echo "src-link extra /tmp/extra" >> feeds.conf
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-          make defconfig
+      - name: Fetch cache manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -p manifest.json -O /tmp/manifest.json --clobber || true
 
-      - name: Build packages
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OP_COMMIT: ${{ steps.commit.outputs.commit }}
+          REQUESTED: ${{ github.event.inputs.packages || 'all' }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
         run: |
-          cd sdk
-          for p in $PACKAGES; do
-            echo "::group::build $p"
-            if ! make -j"$(nproc)" "package/feeds/extra/$p/compile" V=s; then
-              echo "COMBINEWRT_FAILED_PACKAGE=$p"
-              exit 1
-            fi
-            echo "::endgroup::"
-          done
-
-      - name: Assemble feed and manifest
-        run: |
-          SDK_DIR="$GITHUB_WORKSPACE/sdk"
-          FEED_DIR="$SDK_DIR/bin/packages/x86_64/extra"
-          ls -l "$FEED_DIR"
-          mkdir -p /tmp/feed
-          cp "$FEED_DIR"/*.apk "$FEED_DIR"/packages.adb /tmp/feed/
-          APK_BIN="$(find "$SDK_DIR" -path '*/host/bin/apk' | head -1)"
-          export APK_BIN OP_COMMIT
           python3 - <<'PY'
-          import glob, hashlib, json, os, subprocess
-          import yaml
+          import json, os, subprocess
 
-          apk = os.environ["APK_BIN"]
-          packages = []
-          for path in sorted(glob.glob("/tmp/feed/*.apk")):
-              dump = subprocess.check_output([apk, "adbdump", path], text=True)
-              info = yaml.safe_load(dump)["info"]
-              with open(path, "rb") as handle:
-                  digest = hashlib.sha256(handle.read()).hexdigest()
-              packages.append(
-                  {
-                      "name": info["name"],
-                      "version": info["version"],
-                      "arch": info.get("arch"),
-                      "description": (info.get("description") or "").strip(),
-                      "depends": info.get("depends") or [],
-                      "license": info.get("license"),
-                      "origin": info.get("origin"),
-                      "filename": os.path.basename(path),
-                      "sha256": digest,
-                      "size": os.path.getsize(path),
-                  }
-              )
-          manifest = {
-              "opPackagesCommit": os.environ["OP_COMMIT"],
-              "baseVersion": "25.12.2",
-              "generatedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
-              "packages": packages,
-          }
-          with open("/tmp/feed/manifest.json", "w") as handle:
-              json.dump(manifest, handle, indent=2, sort_keys=True)
-              handle.write("\n")
-          print(f"manifest: {len(packages)} packages")
+          all_packages = [p for p in os.environ["ALL_PACKAGES"].split(",") if p]
+          requested = (os.environ.get("REQUESTED") or "all").strip()
+          packages = all_packages if requested == "all" else [p.strip() for p in requested.split(",") if p.strip()]
+          commit = os.environ["OP_COMMIT"]
+
+          manifest = {}
+          try:
+              manifest = json.load(open("/tmp/manifest.json"))
+          except Exception:
+              pass
+          previous = {p.get("name"): p for p in manifest.get("packages", []) if isinstance(p, dict)}
+          force = (os.environ.get("FORCE") or "false").lower() == "true"
+
+          rows = []
+          for package in packages:
+              try:
+                  source = subprocess.check_output(
+                      ["git", "-C", "/tmp/op-packages", "rev-parse", f"{commit}:{package}"],
+                      text=True,
+                  ).strip()
+              except subprocess.CalledProcessError:
+                  source = "missing"
+              old = previous.get(package)
+              fresh = old and old.get("sourceHash") == source and old.get("status") == "ok"
+              if force or not fresh:
+                  rows.append({"package": package, "sourceHash": source})
+
+          with open("/tmp/plan.json", "w") as handle:
+              json.dump({"commit": commit, "packages": rows}, handle)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as handle:
+              handle.write(f"count={len(rows)}\n")
+              handle.write(f"matrix={json.dumps({'include': rows})}\n")
+          print(f"plan: {len(rows)} package(s) to build at {commit}")
           PY
-          tar -C /tmp/feed -czf /tmp/extra-feed.tar.gz .
-          cp /tmp/extra-feed.tar.gz /tmp/feed/extra-feed.tar.gz
 
       - uses: actions/upload-artifact@v7
         with:
-          name: extra-feed-${{ env.OP_COMMIT }}
-          path: |
-            /tmp/extra-feed.tar.gz
-            /tmp/feed/manifest.json
-          retention-days: 7
-          if-no-files-found: error
+          name: plan
+          path: /tmp/plan.json
 
-      - name: Publish extra-feed branch
+  build:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Restore ImageBuilder SDK
+        uses: actions/cache@v6
+        with:
+          path: /tmp/sdk.tar.zst
+          key: immortalwrt-sdk-25.12.2-x86-64
+
+      - name: Download and extract SDK
         run: |
-          cd /tmp/feed
-          git init -b extra-feed
-          git config user.name "combinewrt-bot"
-          git config user.email "combinewrt-bot@users.noreply.github.com"
-          git add -A
-          git commit -m "extra feed for op-packages ${OP_COMMIT}"
-          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:extra-feed
+          if [ ! -f /tmp/sdk.tar.zst ] || [ "$(stat -c%s /tmp/sdk.tar.zst)" -lt 50000000 ]; then
+            curl -fL "$SDK_URL" -o /tmp/sdk.tar.zst
+          fi
+          mkdir -p /tmp/sdk
+          tar --zstd -xf /tmp/sdk.tar.zst -C /tmp/sdk --strip-components=1
+
+      - name: Fetch op-packages
+        env:
+          COMMIT: ${{ needs.plan.outputs.commit }}
+        run: |
+          git clone --filter=blob:none --no-checkout "https://github.com/$OP_REPO" /tmp/op-packages
+          git -C /tmp/op-packages checkout "$COMMIT"
+
+      - name: Prepare package
+        env:
+          PKG: ${{ matrix.package }}
+        run: |
+          mkdir -p /tmp/extra
+          cp -a "/tmp/op-packages/$PKG" "/tmp/extra/$PKG"
+          sed -i -E 's/^(PKG_VERSION:=.*)-r[0-9]+$/\1/' "/tmp/extra/$PKG/Makefile"
+          sed -i -E 's/\+kmod-[A-Za-z0-9_-]+//g' "/tmp/extra/$PKG/Makefile"
+
+      - name: Build package
+        env:
+          PKG: ${{ matrix.package }}
+        run: |
+          cd /tmp/sdk
+          cp feeds.conf.default feeds.conf
+          echo "src-link extra /tmp/extra" >> feeds.conf
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          ok=0
+          for attempt in 1 2 3 4; do
+            echo "::group::build $PKG attempt $attempt"
+            if make -j"$(nproc)" "package/feeds/extra/$PKG/compile" V=s; then ok=1; break; fi
+            echo "::endgroup::"
+            sleep $((attempt * 20))
+          done
+          if [ "$ok" != "1" ]; then
+            echo "COMBINEWRT_FAILED_PACKAGE=$PKG"
+            exit 1
+          fi
+          mkdir -p /tmp/artifacts
+          apk_file="$(ls bin/packages/x86_64/extra/${PKG}-*.apk | head -1)"
+          cp "$apk_file" "/tmp/artifacts/${PKG}.apk"
+          arch="$(staging_dir/host/bin/apk adbdump "$apk_file" | awk '/arch:/{print $2; exit}')"
+          python3 - "$apk_file" "$PKG" "${{ matrix.sourceHash }}" "${arch:-x86_64}" <<'PY'
+          import hashlib, json, os, sys
+          path, name, source_hash, arch = sys.argv[1:5]
+          base = os.path.basename(path)
+          version = base[len(name) + 1 : -len(".apk")]
+          with open(path, "rb") as handle:
+              digest = hashlib.sha256(handle.read()).hexdigest()
+          entry = {
+              "name": name,
+              "version": version,
+              "arch": arch,
+              "sourceHash": source_hash,
+              "filename": f"{name}.apk",
+              "sha256": digest,
+              "size": os.path.getsize(path),
+              "status": "ok",
+              "attempts": 1,
+          }
+          with open(f"/tmp/artifacts/{name}.json", "w") as handle:
+              json.dump(entry, handle)
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pkg-${{ matrix.package }}
+          path: /tmp/artifacts/
+
+  publish:
+    needs: [plan, build]
+    if: always() && needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: plan
+          path: /tmp/plan
+      - uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          pattern: pkg-*
+          path: /tmp/artifacts
+          merge-multiple: true
+
+      - name: Fetch existing cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --title "extra feed cache" --notes "Rolling cache of extra feed packages."
+          mkdir -p /tmp/apks
+          gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -p '*.apk' -D /tmp/apks --clobber || true
+          gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -p manifest.json -O /tmp/manifest.json --clobber || true
+
+      - name: Merge manifest
+        run: |
+          python3 - <<'PY'
+          import glob, json, os, shutil
+
+          plan = json.load(open("/tmp/plan/plan.json"))
+          planned = {row["package"]: row["sourceHash"] for row in plan.get("packages", [])}
+
+          old = {}
+          try:
+              old = {p["name"]: p for p in json.load(open("/tmp/manifest.json")).get("packages", [])}
+          except Exception:
+              pass
+
+          built = {}
+          for path in glob.glob("/tmp/artifacts/*.json"):
+              entry = json.load(open(path))
+              built[entry["name"]] = entry
+              shutil.copy(f"/tmp/artifacts/{entry['filename']}", f"/tmp/apks/{entry['filename']}")
+
+          merged = dict(old)
+          for name, entry in built.items():
+              entry["attempts"] = old.get(name, {}).get("attempts", 0) + 1
+              merged[name] = entry
+          for name, source in planned.items():
+              if name in built:
+                  continue
+              previous = old.get(name, {})
+              merged[name] = {
+                  "name": name,
+                  "version": previous.get("version", "0"),
+                  "arch": previous.get("arch", "x86_64"),
+                  "sourceHash": source,
+                  "filename": f"{name}.apk",
+                  "sha256": previous.get("sha256", ""),
+                  "size": previous.get("size", 0),
+                  "status": "failed",
+                  "attempts": previous.get("attempts", 0) + 1,
+              }
+
+          manifest = {
+              "opPackagesCommit": plan.get("commit", ""),
+              "generatedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+              "packages": sorted(merged.values(), key=lambda item: item["name"]),
+          }
+          with open("/tmp/manifest.json", "w") as handle:
+              json.dump(manifest, handle, indent=2, sort_keys=True)
+          failed = [p["name"] for p in manifest["packages"] if p["status"] != "ok"]
+          print(f"ok={len(manifest['packages']) - len(failed)} failed={failed}")
+          with open("/tmp/failed.txt", "w") as handle:
+              handle.write("\n".join(failed))
+          PY
+          if ls /tmp/apks/*.apk >/dev/null 2>&1; then
+            cd /tmp/apks && tar -czf /tmp/extra-feed.tar.gz ./*.apk
+          else
+            tar -czf /tmp/extra-feed.tar.gz -T /dev/null
+          fi
+
+      - name: Publish cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" /tmp/apks/*.apk /tmp/manifest.json /tmp/extra-feed.tar.gz --clobber
+
+      - name: Summary
+        run: |
+          echo "### extra feed cache" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: \`${{ needs.plan.outputs.commit }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/manifest.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

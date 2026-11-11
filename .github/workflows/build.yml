@@ -38,18 +38,18 @@ jobs:
           tar --zstd -xf ib.tar.zst -C ib --strip-components=1
 
       - name: Add extra feed packages
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git fetch --depth 1 origin extra-feed || true
-          if git rev-parse --verify FETCH_HEAD >/dev/null 2>&1; then
-            rm -rf /tmp/extra-feed /tmp/extra-apks
-            mkdir -p /tmp/extra-feed /tmp/extra-apks
-            git archive FETCH_HEAD | tar -x -C /tmp/extra-feed
-            if [ -f /tmp/extra-feed/extra-feed.tar.gz ]; then
-              tar -xzf /tmp/extra-feed/extra-feed.tar.gz -C /tmp/extra-apks
-              cp /tmp/extra-apks/*.apk ib/packages/
-              echo "extra feed packages: $(ls /tmp/extra-apks/*.apk | wc -l)"
-            fi
+          mkdir -p /tmp/extra-feed /tmp/extra-apks
+          if gh release view extra-feed-cache -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release download extra-feed-cache -R "$GITHUB_REPOSITORY" -p extra-feed.tar.gz -D /tmp/extra-feed --clobber
+            tar -xzf /tmp/extra-feed/extra-feed.tar.gz -C /tmp/extra-apks
+            cp /tmp/extra-apks/*.apk ib/packages/
+            echo "extra feed packages: $(ls /tmp/extra-apks/*.apk | wc -l)"
+          else
+            echo "no extra-feed-cache release yet; building with the official feed only"
           fi
 
       - name: Write files
