@@ -101,6 +101,23 @@ jobs:
           find files -type f | sort
           echo 'uci-defaults written (contents not printed: they contain the root password hash)'
 
+      - name: Debug local index visibility
+        run: |
+          set -euo pipefail
+          cd ib
+          echo "== files =="
+          ls -l packages/*.apk packages/packages.adb
+          echo "== make -n package_reload apk command =="
+          make -n package_reload 2>&1 | grep -E 'apk|mkndx' | head -10 || true
+          echo "== direct apk probe =="
+          rm -rf /tmp/dbgroot && mkdir -p /tmp/dbgroot dl
+          staging_dir/host/bin/apk --root /tmp/dbgroot --repositories-file repositories \
+            --repository "$PWD/packages/packages.adb" --allow-untrusted --arch x86_64 \
+            --cache-dir "$PWD/dl" add --initdb 2>&1 | tail -3
+          staging_dir/host/bin/apk --root /tmp/dbgroot --repositories-file repositories \
+            --repository "$PWD/packages/packages.adb" --allow-untrusted --arch x86_64 \
+            --cache-dir "$PWD/dl" info lucky 2>&1 | head -5 || true
+
       - name: Build image
         run: |
           set -euo pipefail
