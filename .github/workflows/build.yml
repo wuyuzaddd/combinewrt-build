@@ -110,7 +110,12 @@ jobs:
           echo "COMBINEWRT_PROFILE=$PROFILE"
           echo "COMBINEWRT_PACKAGES=$PACKAGES"
           echo "COMBINEWRT_MAKE=make -j$(nproc) image PROFILE=\"$PROFILE\" PACKAGES=\"$PACKAGES\" FILES=files"
+          # The local ib/packages/packages.adb is intentionally unsigned; the
+          # ImageBuilder ships with CONFIG_SIGNATURE_CHECK=y, which would make
+          # apk ignore it. The third-party apks have already been verified
+          # against the pinned feed index above.
           make -j"$(nproc)" image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES=files \
+            CONFIG_SIGNATURE_CHECK= \
             CONFIG_ISO_IMAGES= CONFIG_QCOW2_IMAGES= CONFIG_VDI_IMAGES= CONFIG_VMDK_IMAGES= CONFIG_VHDX_IMAGES= 2>&1 | tee build.log
 
       - name: Assert top-level packages
