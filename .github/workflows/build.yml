@@ -42,9 +42,9 @@ jobs:
           set -euo pipefail
           cd ib
           mkdir -p packages
-          COUNT=$(jq '.downloads // [] | length' ../plan.json)
+          COUNT=$(jq '.composition.downloads // [] | length' ../plan.json)
           echo "COMBINEWRT_DOWNLOADS=$COUNT"
-          jq -c '.downloads[]?' ../plan.json | while IFS= read -r download; do
+          jq -c '.composition.downloads[]?' ../plan.json | while IFS= read -r download; do
             filename=$(echo "$download" | jq -r .filename)
             url=$(echo "$download" | jq -r .url)
             sha=$(echo "$download" | jq -r .sha256)
@@ -144,7 +144,7 @@ jobs:
               exit 1
               ;;
           esac
-          jq -r '.topLevelPackages[]?' ../plan.json > /tmp/combinewrt-top-level.txt
+          jq -r '.composition.topLevelPackages[]?' ../plan.json > /tmp/combinewrt-top-level.txt
           if [ ! -s /tmp/combinewrt-top-level.txt ]; then
             echo "plan has no top-level packages" >&2
             exit 1
