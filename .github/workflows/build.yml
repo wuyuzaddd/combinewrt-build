@@ -24,7 +24,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd jq qemu-utils genisoimage
+          sudo apt-get install -y -qq zstd jq qemu-utils genisoimage e2fsprogs squashfs-tools
 
       - name: Download ImageBuilder
         run: |
@@ -37,20 +37,34 @@ jobs:
           mkdir ib
           tar --zstd -xf ib.tar.zst -C ib --strip-components=1
 
-      - name: Add extra feed packages
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Download pinned third-party packages
         run: |
           set -euo pipefail
-          mkdir -p /tmp/extra-feed /tmp/extra-apks
-          if gh release view extra-feed-cache -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release download extra-feed-cache -R "$GITHUB_REPOSITORY" -p extra-feed.tar.gz -D /tmp/extra-feed --clobber
-            tar -xzf /tmp/extra-feed/extra-feed.tar.gz -C /tmp/extra-apks
-            cp /tmp/extra-apks/*.apk ib/packages/
-            echo "extra feed packages: $(ls /tmp/extra-apks/*.apk | wc -l)"
-          else
-            echo "no extra-feed-cache release yet; building with the official feed only"
-          fi
+          cd ib
+          mkdir -p packages
+          COUNT=$(jq '.downloads // [] | length' ../plan.json)
+          echo "COMBINEWRT_DOWNLOADS=$COUNT"
+          jq -c '.downloads[]?' ../plan.json | while IFS= read -r download; do
+            filename=$(echo "$download" | jq -r .filename)
+            url=$(echo "$download" | jq -r .url)
+            sha=$(echo "$download" | jq -r .sha256)
+            name=$(echo "$download" | jq -r .name)
+            version=$(echo "$download" | jq -r .version)
+            case "$filename" in
+              *.apk) ;;
+              *) echo "refusing unexpected package filename: $filename" >&2; exit 1 ;;
+            esac
+            case "$filename" in
+              */*|*..*) echo "refusing unsafe package filename: $filename" >&2; exit 1 ;;
+            esac
+            echo "downloading $name $version from pinned source: $filename"
+            curl -fL --retry 3 --retry-delay 5 -o "packages/$filename" "$url"
+            echo "$sha  packages/$filename" | sha256sum -c -
+          done
+          rm -f packages/packages.adb
+          (cd packages && ../staging_dir/host/bin/apk mkndx --allow-untrusted --output packages.adb ./*.apk)
+          ls -l packages/*.apk | head -20
+          echo "local package index rebuilt with pinned apks"
 
       - name: Write files
         run: |
@@ -77,6 +91,73 @@ jobs:
           echo "COMBINEWRT_MAKE=make -j$(nproc) image PROFILE=\"$PROFILE\" PACKAGES=\"$PACKAGES\" FILES=files"
           make -j"$(nproc)" image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES=files \
             CONFIG_ISO_IMAGES= CONFIG_QCOW2_IMAGES= CONFIG_VDI_IMAGES= CONFIG_VMDK_IMAGES= CONFIG_VHDX_IMAGES= 2>&1 | tee build.log
+
+      - name: Assert top-level packages
+        run: |
+          set -euo pipefail
+          cd ib
+          IMAGE_TYPE=$(jq -r .imageType ../plan.json)
+          ARTIFACT=$(jq -r .artifactName ../plan.json)
+          IMG=$(find bin/targets -type f -name "$ARTIFACT" | head -1)
+          if [ -z "$IMG" ]; then
+            echo "expected artifact $ARTIFACT was not produced" >&2
+            exit 1
+          fi
+          ROOT=$(mktemp -d)
+          CLEANUP_LOOP=""
+          cleanup() {
+            set +e
+            if mountpoint -q "$ROOT"; then sudo umount "$ROOT"; fi
+            if [ -n "$CLEANUP_LOOP" ]; then sudo losetup -d "$CLEANUP_LOOP"; fi
+            rm -rf "$ROOT"
+          }
+          trap cleanup EXIT
+          case "$IMAGE_TYPE" in
+            rootfs-tar)
+              tar -xzf "$IMG" -C "$ROOT"
+              ;;
+            ext4-efi|squashfs-efi)
+              RAW=$(mktemp --suffix=.img)
+              gzip -dc "$IMG" > "$RAW"
+              CLEANUP_RAW="$RAW"
+              LOOP=$(sudo losetup -Pf --show "$RAW")
+              CLEANUP_LOOP="$LOOP"
+              PART=""
+              for candidate in $(lsblk -rno NAME,FSTYPE "$LOOP" | awk '$2=="ext4" || $2=="squashfs" {print $1}'); do
+                PART="/dev/$candidate"
+                break
+              done
+              if [ -z "$PART" ]; then
+                echo "no ext4/squashfs partition found in $ARTIFACT" >&2
+                lsblk -f "$LOOP" >&2 || true
+                exit 1
+              fi
+              FSTYPE=$(lsblk -rno FSTYPE "$PART")
+              if [ "$FSTYPE" = "squashfs" ]; then
+                sudo mount -t squashfs -o ro "$PART" "$ROOT"
+              else
+                sudo mount -o ro "$PART" "$ROOT"
+              fi
+              ;;
+            *)
+              echo "unknown image type: $IMAGE_TYPE" >&2
+              exit 1
+              ;;
+          esac
+          jq -r '.topLevelPackages[]?' ../plan.json > /tmp/combinewrt-top-level.txt
+          if [ ! -s /tmp/combinewrt-top-level.txt ]; then
+            echo "plan has no top-level packages" >&2
+            exit 1
+          fi
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            if ! sudo staging_dir/host/bin/apk --root "$ROOT" info -e "$pkg" >/dev/null 2>&1; then
+              echo "COMBINEWRT_FAILED_PACKAGE=$pkg"
+              echo "package $pkg is missing from the generated image" >&2
+              exit 1
+            fi
+            echo "verified package: $pkg"
+          done < /tmp/combinewrt-top-level.txt
 
       - name: Package artifact
         run: |
