@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
+      full: ${{ steps.select.outputs.full }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -175,7 +176,8 @@ jobs:
           retention-days: 7
 
       - name: Dispatch publish to combinewrt-packages
-        if: needs.build.result == 'success'
+        # Subset builds are development artifacts, never a feed replacement.
+        if: needs.build.result == 'success' && needs.prepare.outputs.full == 'true'
         env:
           GH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
         run: |

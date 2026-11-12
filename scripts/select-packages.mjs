@@ -36,7 +36,9 @@ const selection = {
 
 const output = process.env.GITHUB_OUTPUT;
 if (output) {
-  writeFileSync(output, `matrix=${JSON.stringify(packages)}\n`, { flag: "a" });
+  writeFileSync(output, `matrix=${JSON.stringify(packages)}\nfull=${packages.length === ALLOWED.length}\n`, {
+    flag: "a",
+  });
 }
 
 const selectionPath = process.env.SELECTION_PATH ?? "selection.json";
