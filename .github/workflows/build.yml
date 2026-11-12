@@ -101,23 +101,6 @@ jobs:
           find files -type f | sort
           echo 'uci-defaults written (contents not printed: they contain the root password hash)'
 
-      - name: Debug local index visibility
-        run: |
-          set -euo pipefail
-          cd ib
-          echo "== files =="
-          ls -l packages/*.apk packages/packages.adb
-          echo "== make -n package_reload apk command =="
-          make -n package_reload 2>&1 | grep -E 'apk|mkndx' | head -10 || true
-          echo "== direct apk probe =="
-          rm -rf /tmp/dbgroot && mkdir -p /tmp/dbgroot dl
-          staging_dir/host/bin/apk --root /tmp/dbgroot --repositories-file repositories \
-            --repository "$PWD/packages/packages.adb" --allow-untrusted --arch x86_64 \
-            --cache-dir "$PWD/dl" add --initdb 2>&1 | tail -3
-          staging_dir/host/bin/apk --root /tmp/dbgroot --repositories-file repositories \
-            --repository "$PWD/packages/packages.adb" --allow-untrusted --arch x86_64 \
-            --cache-dir "$PWD/dl" info lucky 2>&1 | head -5 || true
-
       - name: Build image
         run: |
           set -euo pipefail
@@ -127,12 +110,19 @@ jobs:
           echo "COMBINEWRT_PROFILE=$PROFILE"
           echo "COMBINEWRT_PACKAGES=$PACKAGES"
           echo "COMBINEWRT_MAKE=make -j$(nproc) image PROFILE=\"$PROFILE\" PACKAGES=\"$PACKAGES\" FILES=files"
-          # The local ib/packages/packages.adb is intentionally unsigned; the
-          # ImageBuilder ships with CONFIG_SIGNATURE_CHECK=y, which would make
-          # apk ignore it. The third-party apks have already been verified
-          # against the pinned feed index above.
+          # The local ib/packages/packages.adb is intentionally unsigned. The
+          # ImageBuilder ships with CONFIG_SIGNATURE_CHECK=y, and its recursive
+          # make re-reads .config, so the unsigned local index would be ignored.
+          # Disable the check in .config and assert that apk will actually be
+          # invoked with --allow-untrusted before building.
+          if grep -q '^CONFIG_SIGNATURE_CHECK=y' .config; then
+            sed -i 's/^CONFIG_SIGNATURE_CHECK=y/# CONFIG_SIGNATURE_CHECK is not set/' .config
+          fi
+          if ! make -n package_reload 2>/dev/null | grep -q -- '--allow-untrusted'; then
+            echo 'local package index would not be trusted by apk' >&2
+            exit 1
+          fi
           make -j"$(nproc)" image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES=files \
-            CONFIG_SIGNATURE_CHECK= \
             CONFIG_ISO_IMAGES= CONFIG_QCOW2_IMAGES= CONFIG_VDI_IMAGES= CONFIG_VMDK_IMAGES= CONFIG_VHDX_IMAGES= 2>&1 | tee build.log
 
       - name: Assert top-level packages
