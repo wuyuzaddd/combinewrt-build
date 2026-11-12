@@ -111,7 +111,10 @@ jobs:
 
   manifest:
     needs: [prepare, build]
-    if: needs.prepare.result == 'success'
+    # Always run when the selection succeeded: a failed matrix leg must still
+    # produce a manifest entry with status=failed instead of vanishing from
+    # the artifact entirely.
+    if: always() && needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
