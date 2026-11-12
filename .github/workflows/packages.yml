@@ -1,0 +1,172 @@
+name: packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: Space separated subset of packages (empty = all six)
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SDK_URL: https://downloads.immortalwrt.org/releases/25.12.2/targets/x86/64/immortalwrt-sdk-25.12.2-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+  SOURCE_REPO: kiddin9/op-packages
+  SOURCE_COMMIT: 18b7d51c1a06427fa6e8c64b161869de7daded7e
+  BASE_VERSION: "25.12.2"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: select
+        env:
+          PACKAGES_INPUT: ${{ github.event.inputs.packages || '' }}
+          SELECTION_PATH: selection.json
+        run: node scripts/select-packages.mjs "$PACKAGES_INPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selection
+          path: selection.json
+          retention-days: 7
+      - uses: actions/cache@v4
+        id: sdk-cache
+        with:
+          path: .cache/sdk.tar.zst
+          key: immortalwrt-sdk-25.12.2-x86_64-v1
+      - name: Download SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .cache
+          curl -fL --retry 3 --retry-delay 5 -o .cache/sdk.tar.zst "$SDK_URL"
+          ls -l .cache/sdk.tar.zst
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .cache/sdk.tar.zst
+          key: immortalwrt-sdk-25.12.2-x86_64-v1
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gawk gettext libncurses-dev unzip zlib1g-dev file rsync zstd patch
+
+      - name: Extract SDK
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sdk"
+          tar --zstd -xf .cache/sdk.tar.zst -C "$RUNNER_TEMP/sdk" --strip-components=1
+          test -f "$RUNNER_TEMP/sdk/Makefile"
+
+      - name: Fetch package sources
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/src"
+          curl -fsSL --retry 3 "https://codeload.github.com/$SOURCE_REPO/tar.gz/$SOURCE_COMMIT" \
+            | tar -xz -C "$RUNNER_TEMP/src" --strip-components=1
+          test -d "$RUNNER_TEMP/src/${{ matrix.package }}"
+
+      - name: Prepare SDK
+        run: scripts/prepare-sdk.sh "$RUNNER_TEMP/sdk"
+
+      - name: Build ${{ matrix.package }}
+        run: scripts/build-package.sh "$RUNNER_TEMP/sdk" "$RUNNER_TEMP/src" "${{ matrix.package }}"
+
+      - name: Record failure
+        if: failure()
+        run: |
+          mkdir -p out
+          printf 'build failed for %s in run %s (see job log)\n' \
+            "${{ matrix.package }}" "$GITHUB_RUN_ID" > "out/failure-${{ matrix.package }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apk-${{ matrix.package }}
+          path: out
+          if-no-files-found: error
+          retention-days: 7
+
+  manifest:
+    needs: [prepare, build]
+    if: needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: selection
+          path: selection
+
+      - name: Make artifact directory
+        run: mkdir -p artifacts
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: apk-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Download apk-tools 3.0.9
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/apk-tools.apk" \
+            https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/apk-tools-static-3.0.9-r0.apk
+          mkdir -p "$RUNNER_TEMP/apkstatic"
+          tar -xzf "$RUNNER_TEMP/apk-tools.apk" -C "$RUNNER_TEMP/apkstatic" --ignore-zeros
+          test -x "$RUNNER_TEMP/apkstatic/sbin/apk.static"
+
+      - name: Build manifest
+        run: |
+          node scripts/make-manifest.mjs \
+            --artifacts artifacts \
+            --selection selection/selection.json \
+            --out build \
+            --run-id "$GITHUB_RUN_ID" \
+            --apk-tool "$RUNNER_TEMP/apkstatic/sbin/apk.static" \
+            --base-version "$BASE_VERSION"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### packages-build" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build/manifest.json ]; then
+            node -e '
+              const m = require("./build/manifest.json");
+              for (const e of m.entries) {
+                console.log(`- ${e.status === "ok" ? "✅" : "❌"} \`${e.name}\`${e.status === "ok" ? ` ${e.version}` : ""}`);
+              }
+            ' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: packages-build
+          path: build
+          if-no-files-found: error
+          retention-days: 7
