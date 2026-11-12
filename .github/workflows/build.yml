@@ -42,6 +42,7 @@ jobs:
           set -euo pipefail
           cd ib
           mkdir -p packages
+          APK_BIN="$PWD/staging_dir/host/bin/apk"
           COUNT=$(jq '.composition.downloads // [] | length' ../plan.json)
           echo "COMBINEWRT_DOWNLOADS=$COUNT"
           jq -c '.composition.downloads[]?' ../plan.json | while IFS= read -r download; do
@@ -59,7 +60,27 @@ jobs:
             esac
             echo "downloading $name $version from pinned source: $filename"
             curl -fL --retry 3 --retry-delay 5 -o "packages/$filename" "$url"
-            echo "$sha  packages/$filename" | sha256sum -c -
+            # The feed index's "hashes" value is the APK package hash that apk
+            # itself computes (a sha256 over the signed package), not the
+            # sha256 of the .apk file bytes. Rebuilding a one-package index
+            # with apk is the authoritative check against the pinned index.
+            "$APK_BIN" verify --allow-untrusted "packages/$filename" >/dev/null
+            verify_dir=$(mktemp -d)
+            cp "packages/$filename" "$verify_dir/"
+            (
+              cd "$verify_dir"
+              "$APK_BIN" mkndx --allow-untrusted --output packages.adb ./*.apk >/dev/null
+              "$APK_BIN" adbdump packages.adb |
+                awk '/^  - name:/{seen=1} seen && /^    hashes:/{print $2; exit}'
+            ) > "$verify_dir/actual"
+            actual=$(cat "$verify_dir/actual")
+            rm -rf "$verify_dir"
+            if [ "$actual" != "$sha" ]; then
+              echo "package sha256 does not match pinned index: $filename expected=$sha actual=$actual" >&2
+              exit 1
+            fi
+            echo "verified pinned package sha256: $filename $actual"
+            echo "COMBINEWRT_DOWNLOAD_SHA256=$filename $(sha256sum "packages/$filename" | cut -d' ' -f1)"
           done
           rm -f packages/packages.adb
           (cd packages && ../staging_dir/host/bin/apk mkndx --allow-untrusted --output packages.adb ./*.apk)
