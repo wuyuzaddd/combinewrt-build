@@ -170,3 +170,12 @@ jobs:
           path: build
           if-no-files-found: error
           retention-days: 7
+
+      - name: Dispatch publish to combinewrt-packages
+        if: needs.build.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+        run: |
+          gh api --method POST repos/wuyuzaddd/combinewrt-packages/dispatches \
+            -f event_type=packages-built \
+            -F client_payload[build_run_id]=${{ github.run_id }}
