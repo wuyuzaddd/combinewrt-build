@@ -93,10 +93,11 @@ jobs:
             sed -i '1s/^/untrusted comment: Local build key\n/' keys/local-public-key.pem
           fi
           rm -f packages/packages.adb
-          (cd packages && ../staging_dir/host/bin/apk mkndx --allow-untrusted \
-            --keys-dir ../keys --sign-key ../keys/local-private-key.pem \
+          IB_ROOT="$PWD"
+          (cd packages && "$IB_ROOT/staging_dir/host/bin/apk" mkndx --allow-untrusted \
+            --keys-dir "$IB_ROOT/keys" --sign-key "$IB_ROOT/keys/local-private-key.pem" \
             --output packages.adb ./*.apk)
-          staging_dir/host/bin/apk verify --keys-dir keys packages/packages.adb
+          staging_dir/host/bin/apk verify --keys-dir "$IB_ROOT/keys" packages/packages.adb
           ls -l packages/*.apk | head -20
           echo "local package index rebuilt and signed with pinned apks"
 
