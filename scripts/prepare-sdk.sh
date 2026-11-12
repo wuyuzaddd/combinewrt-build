@@ -5,9 +5,15 @@ set -euo pipefail
 sdk="${1:?usage: prepare-sdk.sh <sdk-dir>}"
 cd "$sdk"
 
+# GitHub runners have no usable terminal; make would otherwise try to open
+# menuconfig to create a missing .config and fail with "cannot initialize
+# terminal type".
+export TERM=dumb
+
 # luci.mk and po2lmo live in the luci feed. Only luci-base's host tools are
 # needed; installing the whole feed makes the SDK try to rebuild lucihttp,
 # which is not present in the SDK sources.
+make defconfig
 ./scripts/feeds update luci
 ./scripts/feeds install luci-base
 make package/feeds/luci/luci-base/host/compile -j"$(nproc)"
