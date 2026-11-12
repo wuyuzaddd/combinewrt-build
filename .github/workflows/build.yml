@@ -152,25 +152,28 @@ jobs:
             ext4-efi|squashfs-efi)
               RAW=$(mktemp --suffix=.img)
               gzip -dc "$IMG" > "$RAW"
-              CLEANUP_RAW="$RAW"
               LOOP=$(sudo losetup -Pf --show "$RAW")
               CLEANUP_LOOP="$LOOP"
-              PART=""
-              for candidate in $(lsblk -rno NAME,FSTYPE "$LOOP" | awk '$2=="ext4" || $2=="squashfs" {print $1}'); do
-                PART="/dev/$candidate"
-                break
+              # The runner's udev does not always probe loop partition
+              # filesystems, so try each partition until one contains the apk
+              # database instead of trusting lsblk FSTYPE.
+              MOUNTED=""
+              for part in "$LOOP"p*; do
+                if sudo mount -o ro "$part" "$ROOT" 2>/dev/null; then
+                  if [ -f "$ROOT/lib/apk/db/installed" ]; then MOUNTED="$part"; break; fi
+                  sudo umount "$ROOT"
+                fi
+                if sudo mount -t squashfs -o ro "$part" "$ROOT" 2>/dev/null; then
+                  if [ -f "$ROOT/lib/apk/db/installed" ]; then MOUNTED="$part"; break; fi
+                  sudo umount "$ROOT"
+                fi
               done
-              if [ -z "$PART" ]; then
-                echo "no ext4/squashfs partition found in $ARTIFACT" >&2
+              if [ -z "$MOUNTED" ]; then
+                echo "no apk rootfs partition found in $ARTIFACT" >&2
                 lsblk -f "$LOOP" >&2 || true
                 exit 1
               fi
-              FSTYPE=$(lsblk -rno FSTYPE "$PART")
-              if [ "$FSTYPE" = "squashfs" ]; then
-                sudo mount -t squashfs -o ro "$PART" "$ROOT"
-              else
-                sudo mount -o ro "$PART" "$ROOT"
-              fi
+              echo "rootfs partition: $MOUNTED"
               ;;
             *)
               echo "unknown image type: $IMAGE_TYPE" >&2
