@@ -115,9 +115,13 @@ jobs:
           # make re-reads .config, so the unsigned local index would be ignored.
           # Disable the check in .config and assert that apk will actually be
           # invoked with --allow-untrusted before building.
+          # The recursive make re-reads .config and defines APK before that,
+          # so patching the Makefile expression is the reliable way to make
+          # the unsigned local index consumable.
           if grep -q '^CONFIG_SIGNATURE_CHECK=y' .config; then
             sed -i 's/^CONFIG_SIGNATURE_CHECK=y/# CONFIG_SIGNATURE_CHECK is not set/' .config
           fi
+          sed -i 's/$(if $(CONFIG_SIGNATURE_CHECK),,--allow-untrusted)/--allow-untrusted/' Makefile
           if ! make -n package_reload 2>/dev/null | grep -q -- '--allow-untrusted'; then
             echo 'local package index would not be trusted by apk' >&2
             exit 1
