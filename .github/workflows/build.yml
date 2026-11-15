@@ -113,6 +113,37 @@ jobs:
             fail download-imagebuilder "" "" "" "failed to extract the ImageBuilder archive"
           fi
 
+      - name: Configure ImageBuilder
+        run: |
+          set -euo pipefail
+          source .github/scripts/fail.sh
+          if [ "$PLAN_SCHEMA" != "2" ]; then
+            # V1 never touched the shipped configuration; keep that behaviour.
+            echo "V1 plan: keep the ImageBuilder default configuration"
+            exit 0
+          fi
+          cd ib
+          # The ImageBuilder's "image" target re-enters make with MAKEFLAGS
+          # unset, so CONFIG_* assignments on the make command line never reach
+          # the build. The variant configuration therefore has to be written
+          # into the ImageBuilder's own .config; the make arguments stay on the
+          # command for provenance and for the manifest.
+          jq -r '.config[]' ../variant.json | while IFS= read -r entry; do
+            key=${entry%%=*}
+            value=${entry#*=}
+            case "$key" in
+              CONFIG_[A-Z0-9_]*) ;;
+              *) fail prepare-plan "" "" "" "invalid ImageBuilder config key: $key" ;;
+            esac
+            if grep -q "^${key}=" .config; then
+              sed -i "s|^${key}=.*|${key}=${value}|" .config
+            else
+              printf '%s=%s\n' "$key" "$value" >> .config
+            fi
+            echo "ImageBuilder config: ${key}=${value}"
+          done
+          grep -E '^CONFIG_(TARGET_ROOTFS_(EXT4FS|SQUASHFS|TARGZ|PARTSIZE)|GRUB|ISO_IMAGES|QCOW2|VDI|VMDK|VHDX|TARGET_IMAGES_GZIP)' .config
+
       - name: Download pinned third-party packages
         run: |
           set -euo pipefail
