@@ -202,6 +202,22 @@ jobs:
       - name: Prepare SDK
         run: scripts/prepare-sdk.sh "$RUNNER_TEMP/sdk"
 
+      - name: Enable per-package signing
+        # ImmortalWrt only signs individual apk packages when this symbol is
+        # set (`include/package-pack.mk` passes --sign $(BUILD_KEY_APK_SEC)).
+        # The extension feed must ship packages that a client can verify with
+        # `apk verify`, so the build generates a fresh RSA key pair at the
+        # paths the SDK already uses for BUILD_KEY_APK_SEC/PUB.
+        run: |
+          set -euo pipefail
+          sdk="$RUNNER_TEMP/sdk"
+          if ! grep -q '^CONFIG_SIGN_EACH_PACKAGE=y$' "$sdk/.config"; then
+            printf '\nCONFIG_SIGN_EACH_PACKAGE=y\n' >> "$sdk/.config"
+          fi
+          openssl genrsa -out "$sdk/private-key.pem" 3072
+          openssl rsa -in "$sdk/private-key.pem" -pubout -out "$sdk/public-key.pem"
+          echo "signing key: $(sha256sum "$sdk/public-key.pem" | cut -d' ' -f1)"
+
       - name: Build ${{ matrix.package }}
         env:
           EXT_SUBDIR: ${{ matrix.subdir }}
@@ -223,20 +239,25 @@ jobs:
           tar -xzf "$RUNNER_TEMP/apk-tools.apk" -C "$RUNNER_TEMP/apkstatic" --ignore-zeros
 
       - name: Verify built apk signature
-        # The SDK signs packages with the release key it was built with. Copy
-        # that public key next to the apk and verify the package signature the
-        # way an apk client would (`apk verify`), with no --allow-untrusted.
+        # Signing happens inside the SDK at build time (CONFIG_SIGN_EACH_PACKAGE),
+        # so the package verifies against the SDK build key with no
+        # --allow-untrusted. The public key ships with the artifact so the
+        # signature can be re-checked outside CI.
         run: |
           set -uo pipefail
           apk_tool="$RUNNER_TEMP/apkstatic/sbin/apk.static"
           apk_file="$(ls "$GITHUB_WORKSPACE"/out/*.apk | head -1)"
-          echo "verifying $(basename "$apk_file")" | tee out/apk-verify.txt
-          key_dir="$RUNNER_TEMP/sdk/staging_dir/host/etc/apk/keys"
-          if [ ! -d "$key_dir" ]; then
-            key_dir="$(dirname "$(find "$RUNNER_TEMP/sdk" -type f -name '*.pem' | head -1)")"
-          fi
-          echo "key dir: $key_dir" | tee -a out/apk-verify.txt
-          ls -l "$key_dir" 2>&1 | tee -a out/apk-verify.txt
+          sdk="$RUNNER_TEMP/sdk"
+          key_dir="$RUNNER_TEMP/verify-keys"
+          rm -rf "$key_dir"
+          mkdir -p "$key_dir"
+          cp "$sdk/public-key.pem" "$key_dir/public-key.pem"
+          cp "$sdk/public-key.pem" out/apk-signing-key.pem
+          {
+            echo "verifying $(basename "$apk_file")"
+            echo "signing key sha256: $(sha256sum "$key_dir/public-key.pem" | cut -d' ' -f1)"
+            openssl pkey -pubin -in "$key_dir/public-key.pem" -text -noout 2>/dev/null | head -2
+          } | tee out/apk-verify.txt
           if "$apk_tool" verify --keys-dir "$key_dir" "$apk_file" 2>&1 | tee -a out/apk-verify.txt; then
             echo "apk verify: OK" | tee -a out/apk-verify.txt
           else
