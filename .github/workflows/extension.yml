@@ -1,0 +1,335 @@
+name: extension
+run-name: extension ${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}
+
+# Build curated extension packages from their pinned upstream commits, produce
+# the extension feed artifact and sign it in combinewrt-packages. The registry
+# (config/sources/registry.json in the site repo) is the authority: every entry
+# is re-validated here before a build farm job starts, and the feed lock is the
+# sorted list of name@repo@ref@subdir so one published index is reproducible.
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: Space separated extension package names (empty = every registry entry)
+        required: false
+        default: ""
+        type: string
+      base_version:
+        description: ImmortalWrt base version (empty = 25.12.2)
+        required: false
+        default: ""
+        type: string
+      target:
+        description: Feed target (x86/64 only for now)
+        required: false
+        default: "x86/64"
+        type: string
+      registry_json:
+        description: Inline registry JSON for pre-merge testing (empty = fetch registry_url)
+        required: false
+        default: ""
+        type: string
+      bundles_json:
+        description: Inline bundles JSON for pre-merge testing (empty = fetch bundles_url)
+        required: false
+        default: ""
+        type: string
+      registry_url:
+        description: Registry URL used when registry_json is empty
+        required: false
+        default: "https://raw.githubusercontent.com/wuyuzaddd/combinewrt/main/config/sources/registry.json"
+        type: string
+      bundles_url:
+        description: Bundles URL used when bundles_json is empty
+        required: false
+        default: "https://raw.githubusercontent.com/wuyuzaddd/combinewrt/main/config/extension/bundles.json"
+        type: string
+      publish_mode:
+        description: live dispatches the signed feed to combinewrt-packages; staging only builds
+        required: false
+        default: "live"
+        type: choice
+        options:
+          - live
+          - staging
+      gate_reason:
+        description: Why this publish mode was picked (audit only)
+        required: false
+        default: ""
+        type: string
+  repository_dispatch:
+    types: [extension-build]
+
+permissions:
+  contents: read
+
+env:
+  BASE_VERSION: ${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}
+  TARGET: ${{ github.event.client_payload.target || github.event.inputs.target || 'x86/64' }}
+  TARGET_ARCH: x86_64
+  PUBLISH_MODE: ${{ github.event.client_payload.publish_mode || github.event.inputs.publish_mode || 'live' }}
+  GATE_REASON: ${{ github.event.client_payload.gate_reason || github.event.inputs.gate_reason || 'manual' }}
+  REGISTRY_JSON: ${{ github.event.client_payload.registry_json || github.event.inputs.registry_json || '' }}
+  BUNDLES_JSON: ${{ github.event.client_payload.bundles_json || github.event.inputs.bundles_json || '' }}
+  REGISTRY_URL: ${{ github.event.inputs.registry_url || 'https://raw.githubusercontent.com/wuyuzaddd/combinewrt/main/config/sources/registry.json' }}
+  BUNDLES_URL: ${{ github.event.inputs.bundles_url || 'https://raw.githubusercontent.com/wuyuzaddd/combinewrt/main/config/extension/bundles.json' }}
+  SDK_URL: https://downloads.immortalwrt.org/releases/${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}/targets/x86/64/immortalwrt-sdk-${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      feed_lock: ${{ steps.select.outputs.feed_lock }}
+      count: ${{ steps.select.outputs.count }}
+      full: ${{ steps.select.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Resolve registry and bundles
+        run: |
+          set -euo pipefail
+          if [ -n "$REGISTRY_JSON" ]; then
+            printf '%s' "$REGISTRY_JSON" > registry.json
+            echo "using inline registry"
+          else
+            curl -fsSL --retry 3 -o registry.json "$REGISTRY_URL"
+            echo "fetched $REGISTRY_URL"
+          fi
+          if [ -n "$BUNDLES_JSON" ]; then
+            printf '%s' "$BUNDLES_JSON" > bundles.json
+          else
+            curl -fsSL --retry 3 -o bundles.json "$BUNDLES_URL"
+          fi
+          node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("registry.json","utf8"));console.log(`registry: ${(r.packages||[]).length} packages`);'
+
+      - name: Select pinned extension packages
+        id: select
+        env:
+          PACKAGES_INPUT: ${{ github.event.inputs.packages || github.event.client_payload.packages || '' }}
+          SELECTION_PATH: selection.json
+        run: node scripts/select-extension-packages.mjs registry.json "$PACKAGES_INPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selection
+          path: |
+            selection.json
+            registry.json
+            bundles.json
+          retention-days: 7
+
+      - uses: actions/cache@v4
+        id: sdk-cache
+        with:
+          path: .cache/sdk.tar.zst
+          key: immortalwrt-sdk-${{ env.BASE_VERSION }}-x86_64-v1
+
+      - name: Download SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .cache
+          curl -fL --retry 3 --retry-delay 5 -o .cache/sdk.tar.zst "$SDK_URL"
+          ls -l .cache/sdk.tar.zst
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .cache/sdk.tar.zst
+          key: immortalwrt-sdk-${{ env.BASE_VERSION }}-x86_64-v1
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gawk gettext libncurses-dev unzip zlib1g-dev file rsync zstd patch
+
+      - name: Extract SDK
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sdk"
+          tar --zstd -xf .cache/sdk.tar.zst -C "$RUNNER_TEMP/sdk" --strip-components=1
+          test -f "$RUNNER_TEMP/sdk/Makefile"
+
+      - name: Fetch ${{ matrix.package }} sources
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/src"
+          curl -fsSL --retry 3 "https://codeload.github.com/${{ matrix.repo }}/tar.gz/${{ matrix.ref }}" \
+            | tar -xz -C "$RUNNER_TEMP/src" --strip-components=1
+          if [ "${{ matrix.subdir }}" = "." ]; then
+            test -f "$RUNNER_TEMP/src/Makefile"
+          else
+            test -f "$RUNNER_TEMP/src/${{ matrix.subdir }}/Makefile"
+          fi
+
+      - name: Prepare SDK
+        run: scripts/prepare-sdk.sh "$RUNNER_TEMP/sdk"
+
+      - name: Build ${{ matrix.package }}
+        env:
+          EXT_SUBDIR: ${{ matrix.subdir }}
+        run: |
+          set -euo pipefail
+          if [ "$EXT_SUBDIR" = "." ]; then
+            source_dir="$RUNNER_TEMP/src"
+          else
+            source_dir="$RUNNER_TEMP/src/$EXT_SUBDIR"
+          fi
+          scripts/build-extension-package.sh "$RUNNER_TEMP/sdk" "$source_dir" "${{ matrix.package }}"
+
+      - name: Download apk-tools 3.0.9
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/apk-tools.apk" \
+            https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/apk-tools-static-3.0.9-r0.apk
+          mkdir -p "$RUNNER_TEMP/apkstatic"
+          tar -xzf "$RUNNER_TEMP/apk-tools.apk" -C "$RUNNER_TEMP/apkstatic" --ignore-zeros
+
+      - name: Verify built apk signature
+        # The SDK signs packages with the release key it was built with. Copy
+        # that public key next to the apk and verify the package signature the
+        # way an apk client would (`apk verify`), with no --allow-untrusted.
+        run: |
+          set -uo pipefail
+          apk_tool="$RUNNER_TEMP/apkstatic/sbin/apk.static"
+          apk_file="$(ls "$GITHUB_WORKSPACE"/out/*.apk | head -1)"
+          echo "verifying $(basename "$apk_file")" | tee out/apk-verify.txt
+          key_dir="$RUNNER_TEMP/sdk/staging_dir/host/etc/apk/keys"
+          if [ ! -d "$key_dir" ]; then
+            key_dir="$(dirname "$(find "$RUNNER_TEMP/sdk" -type f -name '*.pem' | head -1)")"
+          fi
+          echo "key dir: $key_dir" | tee -a out/apk-verify.txt
+          ls -l "$key_dir" 2>&1 | tee -a out/apk-verify.txt
+          if "$apk_tool" verify --keys-dir "$key_dir" "$apk_file" 2>&1 | tee -a out/apk-verify.txt; then
+            echo "apk verify: OK" | tee -a out/apk-verify.txt
+          else
+            echo "apk verify: FAILED" | tee -a out/apk-verify.txt
+            # Keep the artifact so the manifest job can report the result, but
+            # make the job fail: an unverifiable package must not be published.
+            exit 1
+          fi
+
+      - name: Record failure
+        if: failure()
+        run: |
+          mkdir -p out
+          printf 'COMBINEWRT_FAILURE package=%s target=%s reason=build\n' \
+            "${{ matrix.package }}" "$TARGET" > "out/failure-${{ matrix.package }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ext-apk-${{ matrix.package }}
+          path: out
+          if-no-files-found: error
+          retention-days: 7
+
+  manifest:
+    needs: [prepare, build]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: selection
+          path: selection
+
+      - name: Make artifact directory
+        run: mkdir -p artifacts build
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: ext-apk-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Download apk-tools 3.0.9
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/apk-tools.apk" \
+            https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/apk-tools-static-3.0.9-r0.apk
+          mkdir -p "$RUNNER_TEMP/apkstatic"
+          tar -xzf "$RUNNER_TEMP/apk-tools.apk" -C "$RUNNER_TEMP/apkstatic" --ignore-zeros
+
+      - name: Build manifest
+        run: |
+          node scripts/make-manifest.mjs \
+            --artifacts artifacts \
+            --selection selection/selection.json \
+            --out build \
+            --run-id "$GITHUB_RUN_ID" \
+            --apk-tool "$RUNNER_TEMP/apkstatic/sbin/apk.static" \
+            --base-version "$BASE_VERSION"
+          mkdir -p build/verify
+          cp -a artifacts/*.txt build/verify/ 2>/dev/null || true
+
+      - name: Bundle dependency test
+        run: |
+          node scripts/test-extension-bundles.mjs \
+            --bundles selection/bundles.json \
+            --registry selection/registry.json \
+            --selection selection/selection.json \
+            --manifest build/manifest.json \
+            --target "$TARGET" \
+            --out build/bundles.json
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### extension-build" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "- base version: \`$BASE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- target: \`$TARGET\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- feed lock: \`${{ needs.prepare.outputs.feed_lock }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- publish mode: \`$PUBLISH_MODE\` (gate: \`$GATE_REASON\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build/manifest.json ]; then
+            node -e '
+              const m = require("./build/manifest.json");
+              for (const e of m.entries) {
+                console.log(`- ${e.status === "ok" ? "✅" : "❌"} \`${e.name}\`${e.status === "ok" ? ` ${e.version}` : ""}`);
+              }
+            ' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extension-build
+          path: build
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Dispatch publish to combinewrt-packages
+        if: needs.build.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api --method POST repos/wuyuzaddd/combinewrt-packages/dispatches \
+            -f event_type=extension-built \
+            -F client_payload[build_run_id]=${{ github.run_id }} \
+            -f client_payload[base_version]="$BASE_VERSION" \
+            -f client_payload[target]="$TARGET" \
+            -f client_payload[feed_lock]="${{ needs.prepare.outputs.feed_lock }}" \
+            -f client_payload[publish_mode]="$PUBLISH_MODE" \
+            -f client_payload[build_conclusion]="${{ needs.build.result }}"
