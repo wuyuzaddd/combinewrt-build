@@ -14,6 +14,19 @@ on:
         required: false
         default: ""
         type: string
+      source_commit:
+        description: kiddin9/op-packages commit to build (40 lowercase hex; empty = branch head)
+        required: false
+        default: ""
+        type: string
+      publish_mode:
+        description: live publishes automatically when the metadata gate allows it; staging always stages
+        required: false
+        default: "live"
+        type: choice
+        options:
+          - live
+          - staging
   repository_dispatch:
     types: [supplement-build]
 
@@ -24,7 +37,11 @@ env:
   BASE_VERSION: ${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}
   SDK_URL: https://downloads.immortalwrt.org/releases/${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}/targets/x86/64/immortalwrt-sdk-${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
   SOURCE_REPO: kiddin9/op-packages
-  SOURCE_COMMIT: 18b7d51c1a06427fa6e8c64b161869de7daded7e
+  PUBLISH_MODE: ${{ github.event.client_payload.publish_mode || github.event.inputs.publish_mode || 'live' }}
+  # Supplied by the source watch through repository_dispatch, or by hand through
+  # workflow_dispatch. Empty means "whatever head the source repo is on", which
+  # keeps the V1 manual trigger working.
+  SOURCE_COMMIT_INPUT: ${{ github.event.client_payload.source_commit || github.event.inputs.source_commit || '' }}
 
 jobs:
   prepare:
@@ -32,26 +49,56 @@ jobs:
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
       full: ${{ steps.select.outputs.full }}
+      source_commit: ${{ steps.resolve.outputs.source_commit }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Resolve source commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          commit="$SOURCE_COMMIT_INPUT"
+          if [ -z "$commit" ]; then
+            commit=$(gh api "repos/$SOURCE_REPO/commits/HEAD" --jq .sha)
+            echo "source_commit not supplied; using $SOURCE_REPO head $commit"
+          fi
+          if ! printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::source_commit must be a 40 character lowercase git commit (got '$commit')"
+            exit 1
+          fi
+          # Reject a well-formed commit the source repo does not have, instead of
+          # failing the whole matrix halfway through the build.
+          if ! gh api "repos/$SOURCE_REPO/commits/$commit" --jq .sha >/dev/null 2>&1; then
+            echo "::error::$SOURCE_REPO does not contain commit $commit"
+            exit 1
+          fi
+          echo "source_commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "building $SOURCE_REPO@$commit for base $BASE_VERSION (publish_mode=$PUBLISH_MODE)"
+
       - id: select
         env:
           PACKAGES_INPUT: ${{ github.event.inputs.packages || '' }}
           SELECTION_PATH: selection.json
+          SOURCE_COMMIT: ${{ steps.resolve.outputs.source_commit }}
         run: node scripts/select-packages.mjs "$PACKAGES_INPUT"
+
       - uses: actions/upload-artifact@v4
         with:
           name: selection
           path: selection.json
           retention-days: 7
+
       - uses: actions/cache@v4
         id: sdk-cache
         with:
           path: .cache/sdk.tar.zst
           key: immortalwrt-sdk-${{ env.BASE_VERSION }}-x86_64-v1
+
       - name: Download SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
@@ -68,6 +115,8 @@ jobs:
         package: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      SOURCE_COMMIT: ${{ needs.prepare.outputs.source_commit }}
     steps:
       - uses: actions/checkout@v4
 
@@ -125,6 +174,8 @@ jobs:
     # the artifact entirely.
     if: always() && needs.prepare.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      SOURCE_COMMIT: ${{ needs.prepare.outputs.source_commit }}
     steps:
       - uses: actions/checkout@v4
 
@@ -185,10 +236,16 @@ jobs:
 
       - name: Dispatch publish to combinewrt-packages
         # Subset builds are development artifacts, never a feed replacement.
+        # Partial failures still reach the feed repo so it can stage them.
         if: needs.build.result == 'success' && needs.prepare.outputs.full == 'true'
         env:
           GH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
         run: |
+          set -euo pipefail
           gh api --method POST repos/wuyuzaddd/combinewrt-packages/dispatches \
             -f event_type=packages-built \
-            -F client_payload[build_run_id]=${{ github.run_id }}
+            -F client_payload[build_run_id]=${{ github.run_id }} \
+            -f client_payload[base_version]="$BASE_VERSION" \
+            -f client_payload[source_commit]="$SOURCE_COMMIT" \
+            -f client_payload[publish_mode]="$PUBLISH_MODE" \
+            -f client_payload[build_conclusion]="${{ needs.build.result }}"
