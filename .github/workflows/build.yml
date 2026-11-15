@@ -73,7 +73,9 @@ jobs:
             echo "POSTPROCESS_KIND=" >> "$GITHUB_ENV"
             echo "COMBINEWRT_IMAGEBUILDER_COMMAND=$(jq -r .imageBuilderCommand plan.json)"
           fi
-          cat plan.json
+          # Generated file contents may carry the root password hash; never put
+          # them in a public log.
+          jq -c '.files = ((.files // []) | map(.content = "<redacted; \(.content | length) bytes>"))' plan.json
 
       - name: Install tools
         run: |
@@ -202,7 +204,7 @@ jobs:
           done; then
             fail write-files "" "" "" "failed to write generated files"
           fi
-          find files -type f | sort
+          find files -type f 2>/dev/null | sort || true
           echo 'uci-defaults written (contents not printed: they contain the root password hash)'
 
       - name: Build image
