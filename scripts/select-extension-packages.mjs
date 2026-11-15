@@ -153,7 +153,9 @@ const lockLines = selected
   .map((entry) => `${entry.name}@${entry.repo}@${entry.ref}@${entry.subdir}`)
   .sort()
   .join("\n");
-const feedLock = createHash("sha256").update(lockLines).digest("hex");
+// The frozen feed directory is named after the 40-hex prefix, so that is
+// what the feed lock exposes (the full digest is reproducible from the refs).
+const feedLock = createHash("sha256").update(lockLines).digest("hex").slice(0, 40);
 
 const selection = {
   schemaVersion: 1,
