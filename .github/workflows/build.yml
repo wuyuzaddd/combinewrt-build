@@ -303,10 +303,12 @@ jobs:
           set -euo pipefail
           source .github/scripts/fail.sh
           cd ib
+          # variant.json is written at the repository root by Prepare plan.
+          VARIANT="../variant.json"
           KIND="${POSTPROCESS_KIND}"
-          SOURCE=$(jq -r '.postprocess.source' variant.json)
-          RAW=$(jq -r '.postprocess.raw' variant.json)
-          OUTPUT=$(jq -r '.postprocess.output' variant.json)
+          SOURCE=$(jq -r '.postprocess.source' "$VARIANT")
+          RAW=$(jq -r '.postprocess.raw' "$VARIANT")
+          OUTPUT=$(jq -r '.postprocess.output' "$VARIANT")
           echo "converting $SOURCE ($KIND) to $OUTPUT"
           if ! gzip -dc "$SOURCE" > "$RAW"; then
             fail postprocess "" "" "" "failed to decompress $SOURCE"
@@ -322,7 +324,7 @@ jobs:
             --arg kind "$KIND" \
             --arg rawPath "$RAW" --arg rawSha "$RAW_SHA" --argjson rawSize "$RAW_SIZE" \
             --arg outPath "$OUTPUT" --arg outSha "$OUT_SHA" --argjson outSize "$OUT_SIZE" \
-            --argjson steps "$(jq -c '.postprocess.steps' variant.json)" \
+            --argjson steps "$(jq -c '.postprocess.steps' "$VARIANT")" \
             '{kind:$kind,steps:$steps,raw:{name:($rawPath | split("/") | last),sha256:$rawSha,size:$rawSize},converted:{name:($outPath | split("/") | last),sha256:$outSha,size:$outSize}}' > postprocess.json
           rm -f "$RAW"
           cat postprocess.json
@@ -366,7 +368,7 @@ jobs:
               --argjson kernelLine "$(jq -c '.composition.v2.kernelLine' ../plan.json)" \
               --argjson variant "$(jq -c '.composition.v2.imageVariant' ../plan.json)" \
               --arg engine "$(jq -r '.composition.v2.engine' ../plan.json)" \
-              --arg command "$(jq -r '.imageBuilderCommand // ""' ../plan.json)" \
+              --arg command "${COMBINEWRT_IMAGEBUILDER_COMMAND:-$(jq -r '.imageBuilderCommand // ""' ../plan.json)}" \
               --argjson raw "$RAW_JSON" --argjson converted "$CONVERTED_JSON" \
               '{schemaVersion:2, artifactName:$artifactName, path:$path, sha256:$sha256, size:$size, target:$target, kernelLine:$kernelLine, variant:$variant, engine:$engine, imageBuilderCommand:$command}
                + (if $raw != null then {raw:$raw} else {} end)
