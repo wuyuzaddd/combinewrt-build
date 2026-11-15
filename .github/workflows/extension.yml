@@ -136,6 +136,23 @@ jobs:
           fi
           node scripts/select-extension-packages.mjs registry.json "$packages"
 
+      - name: Generate the feed signing key
+        # One key per feed lock, shared by every build leg, so all packages in
+        # the published tree verify against the single key shipped in it.
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/signing"
+          openssl genrsa -out "$RUNNER_TEMP/signing/private-key.pem" 3072
+          openssl rsa -in "$RUNNER_TEMP/signing/private-key.pem" \
+            -pubout -out "$RUNNER_TEMP/signing/public-key.pem"
+          sha256sum "$RUNNER_TEMP/signing/public-key.pem"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-signing-key
+          path: ${{ runner.temp }}/signing
+          retention-days: 7
+
       - uses: actions/upload-artifact@v4
         with:
           name: selection
@@ -202,6 +219,12 @@ jobs:
       - name: Prepare SDK
         run: scripts/prepare-sdk.sh "$RUNNER_TEMP/sdk"
 
+      - name: Fetch the feed signing key
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-signing-key
+          path: ${{ runner.temp }}/signing
+
       - name: Sign built packages with the SDK build key
         # ImmortalWrt 25.12.2 (the release the SDK is cut from) does NOT have
         # CONFIG_SIGN_EACH_PACKAGE: include/package-pack.mk calls `apk mkpkg`
@@ -218,8 +241,13 @@ jobs:
             echo "missing host apk binary: $apk_bin" >&2
             exit 1
           fi
-          openssl genrsa -out "$sdk/private-key.pem" 3072
-          openssl rsa -in "$sdk/private-key.pem" -pubout -out "$sdk/public-key.pem"
+          key_dir="$RUNNER_TEMP/signing"
+          if [ ! -s "$key_dir/private-key.pem" ] || [ ! -s "$key_dir/public-key.pem" ]; then
+            echo "missing the shared signing key from the prepare job" >&2
+            exit 1
+          fi
+          cp "$key_dir/private-key.pem" "$sdk/private-key.pem"
+          cp "$key_dir/public-key.pem" "$sdk/public-key.pem"
           mv "$apk_bin" "$apk_bin.real"
           cat > "$apk_bin" <<'WRAPPER'
           #!/bin/sh
