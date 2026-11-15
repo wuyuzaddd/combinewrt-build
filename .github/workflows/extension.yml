@@ -73,7 +73,10 @@ permissions:
 env:
   BASE_VERSION: ${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}
   TARGET: ${{ github.event.client_payload.target || github.event.inputs.target || 'x86/64' }}
-  TARGET_ARCH: x86_64
+  # GNU make's builtin %.o rule appends $(TARGET_ARCH) to the compiler line,
+  # so the workflow must not export a bare TARGET_ARCH (that broke the SDK
+  # Kconfig host build with: cc: error: x86_64: linker input file not found).
+  FEED_ARCH: x86_64
   PUBLISH_MODE: ${{ github.event.client_payload.publish_mode || github.event.inputs.publish_mode || 'live' }}
   GATE_REASON: ${{ github.event.client_payload.gate_reason || github.event.inputs.gate_reason || 'manual' }}
   REGISTRY_JSON: ${{ github.event.client_payload.registry_json || github.event.inputs.registry_json || '' }}
@@ -195,19 +198,6 @@ jobs:
           else
             test -f "$RUNNER_TEMP/src/${{ matrix.subdir }}/Makefile"
           fi
-
-      - name: Diagnose host toolchain
-        run: |
-          set -uo pipefail
-          cd "$RUNNER_TEMP/sdk"
-          echo "--- gcc/pkg-config ---"
-          gcc --version | head -1 || true
-          pkg-config --version || true
-          echo "--- scripts/config contents ---"
-          ls scripts/config | head -20 || true
-          echo "--- verbose defconfig (first failure) ---"
-          TERM=dumb make defconfig V=s > /tmp/defconfig-verbose.log 2>&1 || true
-          tail -80 /tmp/defconfig-verbose.log || true
 
       - name: Prepare SDK
         run: scripts/prepare-sdk.sh "$RUNNER_TEMP/sdk"

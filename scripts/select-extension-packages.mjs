@@ -160,7 +160,7 @@ const selection = {
   feed: "extension",
   baseVersion,
   target,
-  arch: process.env.TARGET_ARCH?.trim() || "x86_64",
+  arch: process.env.FEED_ARCH?.trim() || "x86_64",
   feedLock,
   packages: selected.map((entry) => entry.name),
   entries: selected,
