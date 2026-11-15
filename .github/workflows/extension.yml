@@ -202,20 +202,36 @@ jobs:
       - name: Prepare SDK
         run: scripts/prepare-sdk.sh "$RUNNER_TEMP/sdk"
 
-      - name: Enable per-package signing
-        # ImmortalWrt only signs individual apk packages when this symbol is
-        # set (`include/package-pack.mk` passes --sign $(BUILD_KEY_APK_SEC)).
-        # The extension feed must ship packages that a client can verify with
-        # `apk verify`, so the build generates a fresh RSA key pair at the
-        # paths the SDK already uses for BUILD_KEY_APK_SEC/PUB.
+      - name: Sign built packages with the SDK build key
+        # ImmortalWrt 25.12.2 (the release the SDK is cut from) does NOT have
+        # CONFIG_SIGN_EACH_PACKAGE: include/package-pack.mk calls `apk mkpkg`
+        # without --sign there (master-only feature), so a stock SDK build
+        # produces unsigned packages and `apk verify` can only say UNTRUSTED.
+        # Wrap the host apk binary to inject --sign-key for mkpkg only. Every
+        # other subcommand passes through untouched, and the generated public
+        # key is what the verify step and the published feed key correspond to.
         run: |
           set -euo pipefail
           sdk="$RUNNER_TEMP/sdk"
-          if ! grep -q '^CONFIG_SIGN_EACH_PACKAGE=y$' "$sdk/.config"; then
-            printf '\nCONFIG_SIGN_EACH_PACKAGE=y\n' >> "$sdk/.config"
+          apk_bin="$sdk/staging_dir/host/bin/apk"
+          if [ ! -x "$apk_bin" ]; then
+            echo "missing host apk binary: $apk_bin" >&2
+            exit 1
           fi
           openssl genrsa -out "$sdk/private-key.pem" 3072
           openssl rsa -in "$sdk/private-key.pem" -pubout -out "$sdk/public-key.pem"
+          mv "$apk_bin" "$apk_bin.real"
+          cat > "$apk_bin" <<'WRAPPER'
+          #!/bin/sh
+          real="${0}.real"
+          if [ "$1" = "mkpkg" ]; then
+            shift
+            exec "$real" mkpkg --sign-key "${APK_SIGN_KEY:?APK_SIGN_KEY is not set}" "$@"
+          fi
+          exec "$real" "$@"
+          WRAPPER
+          chmod +x "$apk_bin"
+          echo "APK_SIGN_KEY=$sdk/private-key.pem" >> "$GITHUB_ENV"
           echo "signing key: $(sha256sum "$sdk/public-key.pem" | cut -d' ' -f1)"
 
       - name: Build ${{ matrix.package }}
