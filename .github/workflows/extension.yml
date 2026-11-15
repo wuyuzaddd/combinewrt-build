@@ -196,6 +196,19 @@ jobs:
             test -f "$RUNNER_TEMP/src/${{ matrix.subdir }}/Makefile"
           fi
 
+      - name: Diagnose host toolchain
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/sdk"
+          echo "--- gcc/pkg-config ---"
+          gcc --version | head -1 || true
+          pkg-config --version || true
+          echo "--- scripts/config contents ---"
+          ls scripts/config | head -20 || true
+          echo "--- verbose defconfig (first failure) ---"
+          TERM=dumb make defconfig V=s > /tmp/defconfig-verbose.log 2>&1 || true
+          tail -80 /tmp/defconfig-verbose.log || true
+
       - name: Prepare SDK
         run: scripts/prepare-sdk.sh "$RUNNER_TEMP/sdk"
 
