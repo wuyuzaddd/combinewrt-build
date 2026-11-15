@@ -339,6 +339,11 @@ jobs:
             --base-version "$BASE_VERSION"
           mkdir -p build/verify
           cp -a artifacts/*.txt build/verify/ 2>/dev/null || true
+          if [ -f artifacts/apk-signing-key.pem ]; then
+            # Publish the per-build package signing key beside the feed so a
+            # client can re-run `apk verify` on the published packages.
+            cp artifacts/apk-signing-key.pem build/apk-signing-key.pem
+          fi
 
       - name: Bundle dependency test
         run: |
