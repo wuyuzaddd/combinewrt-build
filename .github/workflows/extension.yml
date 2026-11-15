@@ -58,6 +58,12 @@ on:
         required: false
         default: ""
         type: string
+  # A brand new workflow file only becomes dispatchable once it is on the
+  # default branch, so the evidence run on an unreleased ticket branch is
+  # triggered by touching this marker file instead.
+  push:
+    branches: [v2/ticket-12]
+    paths: ["ci/extension-trigger.txt"]
   repository_dispatch:
     types: [extension-build]
 
@@ -97,12 +103,17 @@ jobs:
           if [ -n "$REGISTRY_JSON" ]; then
             printf '%s' "$REGISTRY_JSON" > registry.json
             echo "using inline registry"
+          elif [ -f ci/extension/registry.json ]; then
+            cp ci/extension/registry.json registry.json
+            echo "using the ci/extension registry snapshot (site repo not merged yet)"
           else
             curl -fsSL --retry 3 -o registry.json "$REGISTRY_URL"
             echo "fetched $REGISTRY_URL"
           fi
           if [ -n "$BUNDLES_JSON" ]; then
             printf '%s' "$BUNDLES_JSON" > bundles.json
+          elif [ -f ci/extension/bundles.json ]; then
+            cp ci/extension/bundles.json bundles.json
           else
             curl -fsSL --retry 3 -o bundles.json "$BUNDLES_URL"
           fi
@@ -113,7 +124,14 @@ jobs:
         env:
           PACKAGES_INPUT: ${{ github.event.inputs.packages || github.event.client_payload.packages || '' }}
           SELECTION_PATH: selection.json
-        run: node scripts/select-extension-packages.mjs registry.json "$PACKAGES_INPUT"
+        run: |
+          set -euo pipefail
+          packages="$PACKAGES_INPUT"
+          if [ -z "$packages" ] && [ -f ci/extension/packages.txt ]; then
+            packages="$(tr '\n' ' ' < ci/extension/packages.txt)"
+            echo "packages from ci/extension/packages.txt: $packages"
+          fi
+          node scripts/select-extension-packages.mjs registry.json "$packages"
 
       - uses: actions/upload-artifact@v4
         with:
