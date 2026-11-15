@@ -27,6 +27,11 @@ on:
         options:
           - live
           - staging
+      gate_reason:
+        description: Why the source watch picked this publish mode (audit only)
+        required: false
+        default: ""
+        type: string
   repository_dispatch:
     types: [supplement-build]
 
@@ -38,6 +43,7 @@ env:
   SDK_URL: https://downloads.immortalwrt.org/releases/${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}/targets/x86/64/immortalwrt-sdk-${{ github.event.client_payload.base_version || github.event.inputs.base_version || '25.12.2' }}-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
   SOURCE_REPO: kiddin9/op-packages
   PUBLISH_MODE: ${{ github.event.client_payload.publish_mode || github.event.inputs.publish_mode || 'live' }}
+  GATE_REASON: ${{ github.event.client_payload.gate_reason || github.event.inputs.gate_reason || 'manual' }}
   # Supplied by the source watch through repository_dispatch, or by hand through
   # workflow_dispatch. Empty means "whatever head the source repo is on", which
   # keeps the V1 manual trigger working.
@@ -217,6 +223,11 @@ jobs:
         if: always()
         run: |
           echo "### packages-build" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "- base version: \`$BASE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- source commit: \`$SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- publish mode: \`$PUBLISH_MODE\` (gate: \`$GATE_REASON\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
           if [ -f build/manifest.json ]; then
             node -e '
               const m = require("./build/manifest.json");
