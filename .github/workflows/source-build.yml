@@ -20,6 +20,13 @@ on:
         type: string
   repository_dispatch:
     types: [combinewrt-source-build]
+  # Before this workflow lands on the default branch GitHub cannot dispatch it
+  # by file name, so the ticket branch uses a pushed plan file as its payload.
+  push:
+    branches: [v2/ticket-06]
+    paths:
+      - ".github/workflows/source-build.yml"
+      - ".github/source-build-plan.json"
 
 permissions:
   contents: read
@@ -47,8 +54,12 @@ jobs:
 
           if [ -n "${RECIPE_INPUT:-}" ]; then
             printf '%s' "$RECIPE_INPUT" > plan.json
-          else
+          elif jq -e '.client_payload | type == "object"' "$GITHUB_EVENT_PATH" > /dev/null; then
             jq '.client_payload' "$GITHUB_EVENT_PATH" > plan.json
+          elif [ -f .github/source-build-plan.json ]; then
+            jq '.' .github/source-build-plan.json > plan.json
+          else
+            fail prepare "" "" "" "No source-build recipe in the dispatch payload or .github/source-build-plan.json."
           fi
 
           if ! jq -e '
