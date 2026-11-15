@@ -36,12 +36,14 @@
     "CONFIG_PACKAGE_luci-app-firewall=y"
   ],
   "profileChecks": [
-    "CONFIG_TARGET_x86_64_Generic=y",
-    "CONFIG_TARGET_DEVICE_x86_64_DEVICE_generic=y"
+    "CONFIG_TARGET_x86_64_DEVICE_generic=y",
+    "CONFIG_TARGET_DEVICE_x86_64_DEVICE_generic=y",
+    "CONFIG_TARGET_x86_64_generic=y",
+    "CONFIG_TARGET_x86_64_Generic=y"
   ],
   "metadata": {
     "schemaVersion": 1,
-    "generatedAt": "2026-11-15T10:07:26.386Z",
+    "generatedAt": "2026-11-15T10:22:35.692Z",
     "baseVersion": "24.10-SNAPSHOT",
     "channel": "snapshot",
     "targetId": "x86/64",
