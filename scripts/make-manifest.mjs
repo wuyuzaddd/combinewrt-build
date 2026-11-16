@@ -33,6 +33,9 @@ const arch = option("arch", "x86_64");
 if (!Number.isInteger(runId) || runId <= 0) throw new Error("--run-id must be a positive integer");
 
 const selection = JSON.parse(readFileSync(selectionPath, "utf8"));
+// Extension feeds build one package per upstream repository, so the selection
+// carries per-package provenance instead of one source repo/commit pair.
+const selectionById = new Map((selection.entries ?? []).map((entry) => [entry.name, entry]));
 const available = new Set(readdirSync(artifacts));
 const apksDir = join(outDir, "apks");
 mkdirSync(apksDir, { recursive: true });
@@ -82,9 +85,9 @@ for (const name of selection.packages) {
       installedSize: Number(info["installed-size"] ?? 0),
       fileSize: statSync(source).size,
       sha256: createHash("sha256").update(bytes).digest("hex"),
-      sourceRepo: selection.sourceRepo,
-      sourceCommit: selection.sourceCommit,
-      sourcePath: name,
+      sourceRepo: selectionById.get(name)?.repo ?? selection.sourceRepo,
+      sourceCommit: selectionById.get(name)?.ref ?? selection.sourceCommit,
+      sourcePath: selectionById.get(name)?.subdir ?? name,
       asset,
       publishedAt: new Date().toISOString(),
     });
@@ -100,6 +103,8 @@ const manifest = {
   generatedAt: new Date().toISOString(),
   baseVersion,
   arch,
+  feed: selection.feed ?? "supplement",
+  feedLock: selection.feedLock ?? null,
   buildRunId: runId,
   entries,
 };
