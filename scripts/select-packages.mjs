@@ -3,14 +3,10 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const ALLOWED = [
-  "luci-lib-xterm",
-  "taskd",
-  "luci-lib-taskd",
-  "luci-app-store",
-  "luci-app-substore",
-  "luci-app-fwlive",
-];
+// The iStore stack (luci-app-store, luci-lib-taskd, luci-lib-xterm, taskd) is
+// built from istoreos/istore by the extension workflow now; keeping it here too
+// would publish one name from two feeds.
+const ALLOWED = ["luci-app-fwlive", "luci-app-substore"];
 
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 

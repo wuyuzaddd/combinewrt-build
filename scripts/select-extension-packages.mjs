@@ -16,6 +16,10 @@ const NAME_PATTERN = /^[a-z0-9][a-z0-9+._-]*$/;
 const SAFE_PATH = /^(?:\.|[A-Za-z0-9_./+-]+)$/;
 const URL_PATTERN = /https?:\/\//i;
 const STRATEGIES = new Set(["prebuilt", "rebuild", "blocked"]);
+// A `local:` recipe lives in this repository (`.github/packages/<name>`) instead
+// of an upstream checkout. It is only allowed for extension entries whose
+// upstream repo/ref still names the provenance we publish in the manifest.
+const LOCAL_RECIPE_PREFIX = "local:";
 const LAYERS = new Set(["official", "dllkids", "supplement", "extension"]);
 // Mirrors src/lib/sources/spdx.ts in the site repo. Unknown identifiers must
 // fail here too: a build farm that trusts an arbitrary license string would
@@ -99,7 +103,13 @@ for (const entry of entries) {
       errors.push(`${where}: missing recipe`);
     }
     const expectedRecipe = `github:${entry.repo ?? ""}@${entry.ref ?? ""}/${subdir}`;
-    if (typeof entry.recipe === "string" && entry.recipe !== expectedRecipe) {
+    if (typeof entry.recipe === "string" && entry.recipe.startsWith(LOCAL_RECIPE_PREFIX)) {
+      // Local recipes are built from this repository, so the recipe name must be
+      // the package name: that is the only mapping the workflow needs.
+      if (entry.recipe !== `${LOCAL_RECIPE_PREFIX}${entry.name}`) {
+        errors.push(`${where}: local recipe must be ${JSON.stringify(`${LOCAL_RECIPE_PREFIX}${entry.name}`)}`);
+      }
+    } else if (typeof entry.recipe === "string" && entry.recipe !== expectedRecipe) {
       errors.push(`${where}: recipe ${JSON.stringify(entry.recipe)} does not match ${JSON.stringify(expectedRecipe)}`);
     }
     if (typeof entry.recipeHash !== "string" || !/^[0-9a-f]{64}$/.test(entry.recipeHash)) {
@@ -144,6 +154,7 @@ for (const name of requested) {
     publicAllowed: entry.publicAllowed,
     recipe: entry.recipe,
     recipeHash: entry.recipeHash,
+    local: entry.recipe.startsWith(LOCAL_RECIPE_PREFIX),
     targets: entry.targets ?? [],
     kernelLines: entry.kernelLines ?? [],
   });
@@ -169,7 +180,15 @@ const selection = {
 };
 
 const output = process.env.GITHUB_OUTPUT;
-const matrix = { include: selected.map((entry) => ({ package: entry.name, repo: entry.repo, ref: entry.ref, subdir: entry.subdir })) };
+const matrix = {
+  include: selected.map((entry) => ({
+    package: entry.name,
+    repo: entry.repo,
+    ref: entry.ref,
+    subdir: entry.subdir,
+    local: entry.local,
+  })),
+};
 if (output) {
   writeFileSync(
     output,

@@ -1,0 +1,20 @@
+LuCI wrapper files in this directory
+====================================
+
+luasrc/controller/quickstart.lua
+luasrc/controller/istore_backend.lua
+luasrc/view/quickstart/home.htm
+luasrc/view/quickstart/main.htm
+root/etc/uci-defaults/50_luci-quickstart
+po/zh-cn/quickstart.po
+
+are taken verbatim from kiddin9/op-packages at commit
+19a44706dde7554f21c9d0503cdcfc399914067f, directory `luci-app-quickstart/`.
+That repository is distributed under the GNU General Public License v2.0
+(see its LICENSE file); `istore_backend.lua` carries its own MIT header and
+`luci-app-quickstart/Makefile` in that repository claims Apache-2.0, so the
+combined package is published as GPL-2.0-only, the strictest of the three.
+
+The static web assets are NOT taken from that repository: they are installed
+from the official istoreos/quickstart release archive, which is MIT licensed,
+so the assets and the quickstart binary always share one release.

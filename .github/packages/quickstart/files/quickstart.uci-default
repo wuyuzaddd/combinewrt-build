@@ -1,0 +1,7 @@
+#!/bin/sh
+#
+# Enable the service on first install and on upgrade (replaces an existing
+# 09-quickstart from the community package, which also owned this path).
+/etc/init.d/quickstart enable
+/etc/init.d/quickstart start
+exit 0
