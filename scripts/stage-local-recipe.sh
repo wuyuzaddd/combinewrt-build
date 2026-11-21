@@ -25,6 +25,14 @@ if [ ! -f "$recipe_dir/Makefile" ]; then
   exit 1
 fi
 
+# include/scan.mk only lists a package directory when its Makefile contains one
+# of these macros verbatim; a LuCI package that relies on luci.mk alone would be
+# invisible to `make package/<name>/compile` with a bare "No rule to make target".
+if ! grep -qE 'call (Build/DefaultTargets|BuildPackage|KernelPackage)' "$recipe_dir/Makefile"; then
+  echo "local recipe Makefile has no SDK scan marker (call BuildPackage/Build\/DefaultTargets/KernelPackage): $recipe_dir" >&2
+  exit 1
+fi
+
 # ADR 0007: a download without a pinned hash must never reach the signed feed.
 if grep -qE '^PKG_SOURCE:=' "$recipe_dir/Makefile"; then
   if ! grep -qE '^PKG_HASH:=[0-9a-f]{64}$' "$recipe_dir/Makefile"; then

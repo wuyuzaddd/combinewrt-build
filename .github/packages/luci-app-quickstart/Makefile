@@ -41,3 +41,9 @@ define Build/Compile
 	$(CP) $(PKG_BUILD_DIR)/web/luci-static/quickstart/. $(PKG_BUILD_DIR)/htdocs/luci-static/quickstart/
 	rm -rf $(PKG_BUILD_DIR)/web
 endef
+
+# The SDK discovers packages by grepping the Makefile for one of the build
+# macros (include/scan.mk); luci.mk expands the real call, so keep the marker
+# line every LuCI package carries. Without it `make package/<name>/compile`
+# fails with "No rule to make target".
+# call BuildPackage - OpenWrt buildroot signature
