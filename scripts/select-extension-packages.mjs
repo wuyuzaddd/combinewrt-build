@@ -194,6 +194,7 @@ const matrix = {
     ref: entry.ref,
     subdir: entry.subdir,
     local: entry.local,
+    license: entry.license,
   })),
 };
 if (output) {

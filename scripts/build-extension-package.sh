@@ -36,8 +36,18 @@ fi
 echo "building $package:"
 grep -E '^(PKG_VERSION|PKG_RELEASE):=' "$makefile"
 
+# The published apk carries PKG_LICENSE, and the catalogue's licence gate reads
+# it. Recipes that do not declare one (every LuCI package in istoreos/istore)
+# would surface as "unknown licence" even though the registry reviewed them, so
+# fall back to the licence the registry pins for this package.
+make_vars=()
+if ! grep -qE '^PKG_LICENSE:=' "$makefile" && [ -n "${EXT_LICENSE:-}" ]; then
+  echo "PKG_LICENSE not declared; using the registry licence: $EXT_LICENSE"
+  make_vars+=("PKG_LICENSE=$EXT_LICENSE")
+fi
+
 cd "$sdk"
-make "package/$package/compile" -j"$(nproc)" V=s
+make "package/$package/compile" -j"$(nproc)" V=s "${make_vars[@]}"
 
 apk_path="$(find bin/packages -maxdepth 3 -type f -name "$package-*.apk" -print -quit)"
 if [ -z "$apk_path" ]; then

@@ -17,6 +17,7 @@ LUCI_PKGARCH:=all
 # Same normalisation as the quickstart package: apk rejects `-rc`, accepts `_rc`.
 PKG_VERSION:=0.17.1_rc20261028
 PKG_RELEASE:=7
+PKG_LICENSE:=GPL-2.0-only
 
 # The static UI is installed by the `quickstart` package from the same release
 # archive: keeping one owner avoids two builds downloading the archive and
