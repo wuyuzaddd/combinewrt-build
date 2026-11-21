@@ -396,6 +396,26 @@ jobs:
           mkdir -p build/verify
           cp -a artifacts/*.txt build/verify/ 2>/dev/null || true
 
+      - name: Assert no overlap with the official package index
+        # ADR 0007: the signed feed must never shadow an official ImmortalWrt
+        # package, because apk resolves by name/version and not by repository
+        # order. The official index of the same release is the reference set.
+        run: |
+          set -euo pipefail
+          # The official release is split into feeds; union all of them.
+          feeds="base luci packages routing telephony"
+          official_args=()
+          for feed in $feeds; do
+            out="$RUNNER_TEMP/official-$feed.adb"
+            curl -fsSL --retry 3 -o "$out" \
+              "https://downloads.immortalwrt.org/releases/$BASE_VERSION/packages/$FEED_ARCH/$feed/packages.adb"
+            official_args+=(--official-index "$out")
+          done
+          node scripts/check-official-overlap.mjs \
+            --manifest build/manifest.json \
+            "${official_args[@]}" \
+            --apk-tool "$RUNNER_TEMP/apkstatic/sbin/apk.static"
+
       - name: Bundle dependency test
         run: |
           node scripts/test-extension-bundles.mjs \
