@@ -63,6 +63,8 @@ define Package/quickstart/install
 	$(INSTALL_CONF) ./files/quickstart.config $(1)/etc/config/quickstart
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/quickstart.uci-default $(1)/etc/uci-defaults/09-quickstart
+	$(INSTALL_DIR) $(1)/www/luci-static/quickstart
+	$(CP) $(PKG_BUILD_DIR)/web/luci-static/quickstart/. $(1)/www/luci-static/quickstart/
 endef
 
 $(eval $(call BuildPackage,quickstart))

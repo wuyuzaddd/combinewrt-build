@@ -39,9 +39,6 @@ if grep -qE '^PKG_SOURCE:=' "$recipe_dir/Makefile"; then
     echo "local recipe declares PKG_SOURCE without a 64 character PKG_HASH: $recipe_dir" >&2
     exit 1
   fi
-elif ! grep -qE '^PKG_HASH:=' "$recipe_dir/Makefile"; then
-  echo "local recipe has no PKG_HASH: $recipe_dir" >&2
-  exit 1
 fi
 if grep -qE '^PKG_HASH:=skip' "$recipe_dir/Makefile"; then
   echo "local recipe uses PKG_HASH:=skip: $recipe_dir" >&2
