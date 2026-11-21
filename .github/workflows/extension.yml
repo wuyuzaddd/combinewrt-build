@@ -446,4 +446,5 @@ jobs:
             -f client_payload[target]="$TARGET" \
             -f client_payload[feed_lock]="${{ needs.prepare.outputs.feed_lock }}" \
             -f client_payload[publish_mode]="$PUBLISH_MODE" \
+            -f client_payload[feed_kind]=extension \
             -f client_payload[build_conclusion]="${{ needs.build.result }}"
