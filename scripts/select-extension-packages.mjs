@@ -64,8 +64,15 @@ for (const entry of entries) {
   const key = `${entry.name}@${entry.source}`;
   if (seen.has(key)) errors.push(`${where}: duplicate entry for layer ${entry.source}`);
   seen.add(key);
-  if (typeof entry.license !== "string" || !SPDX.has(entry.license)) {
-    errors.push(`${where}: unknown SPDX license ${JSON.stringify(entry.license)}`);
+  // Mirrors isLicenseRef() in src/lib/sources/spdx.ts: a custom licence
+  // reference is only acceptable for a package that is not published publicly.
+  const licenseRef = typeof entry.license === "string" && /^LicenseRef-[A-Za-z0-9][A-Za-z0-9.-]*$/.test(entry.license);
+  if (typeof entry.license !== "string" || (!SPDX.has(entry.license) && !(licenseRef && entry.publicAllowed === false))) {
+    errors.push(
+      licenseRef
+        ? `${where}: licence reference ${JSON.stringify(entry.license)} requires publicAllowed: false`
+        : `${where}: unknown SPDX license ${JSON.stringify(entry.license)}`,
+    );
   }
   if (typeof entry.publicAllowed !== "boolean") errors.push(`${where}: publicAllowed must be a boolean`);
   if (!STRATEGIES.has(entry.strategy)) errors.push(`${where}: unknown strategy ${JSON.stringify(entry.strategy)}`);
