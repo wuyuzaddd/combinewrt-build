@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-21",
+  "updatedAt": "2026-11-22",
   "packages": [
     {
       "name": "luci-app-samba4",
@@ -145,8 +145,7 @@
         "title": "Argon 主题",
         "description": "深色玻璃质感主题，LuCI 24.10 与 25.12 均可用。"
       },
-      "recipeHash": "46c33bef12f3005fe848478870d6edd992f2e77ef7d43ffd1c83e05b4d39a493",
-      "kernelLines": []
+      "recipeHash": "46c33bef12f3005fe848478870d6edd992f2e77ef7d43ffd1c83e05b4d39a493"
     },
     {
       "name": "luci-theme-aurora",
@@ -168,8 +167,7 @@
         "title": "Aurora 主题",
         "description": "极光渐变主题，来源 eamonxg/luci-theme-aurora。"
       },
-      "recipeHash": "0dd309e77897eac906b56c49a92a5ed7ed456d04bc76400c254f0fb885094370",
-      "kernelLines": []
+      "recipeHash": "0dd309e77897eac906b56c49a92a5ed7ed456d04bc76400c254f0fb885094370"
     },
     {
       "name": "luci-app-openclash",
@@ -191,8 +189,7 @@
         "title": "OpenClash",
         "description": "Clash/Mihomo 内核代理，TUN 模式需要 kmod-tun。"
       },
-      "recipeHash": "e374d425d149c8a9754321bd9c80612f88fafe4e029d3440d1aa2e270fe0468a",
-      "kernelLines": []
+      "recipeHash": "e374d425d149c8a9754321bd9c80612f88fafe4e029d3440d1aa2e270fe0468a"
     },
     {
       "name": "luci-app-mosdns",
@@ -214,8 +211,7 @@
         "title": "MOSDNS 分流解析",
         "description": "上游 README 的机器翻译版本，尚未人工校对。"
       },
-      "recipeHash": "705885a2631312980804186078470220036c3d43daba171044a981762e5b56a6",
-      "kernelLines": []
+      "recipeHash": "705885a2631312980804186078470220036c3d43daba171044a981762e5b56a6"
     },
     {
       "name": "luci-app-dockerman",
@@ -236,8 +232,7 @@
         "status": "unreviewed",
         "title": "Dockerman 容器管理"
       },
-      "recipeHash": "d5967ddc17df6febb15ebfc7db9491226178275f38d439ed9f0dfa93131af8cd",
-      "kernelLines": []
+      "recipeHash": "d5967ddc17df6febb15ebfc7db9491226178275f38d439ed9f0dfa93131af8cd"
     },
     {
       "name": "quickstart",
@@ -259,8 +254,7 @@
         "title": "Quickstart 首次开机向导",
         "description": "官方预编译二进制（v0.17.1-rc20261028），配方在编译仓 .github/packages/quickstart；版本号规范化为 0.17.1_rc20261028-r7 以通过 apk version。"
       },
-      "recipeHash": "915d57591bfd34234e38d6a930d6690fd1053d8c1df0b696ef02fe3d2857b88f",
-      "kernelLines": []
+      "recipeHash": "915d57591bfd34234e38d6a930d6690fd1053d8c1df0b696ef02fe3d2857b88f"
     },
     {
       "name": "luci-app-quickstart",
@@ -282,8 +276,7 @@
         "title": "Quickstart 菜单（LuCI 包装）",
         "description": "只含 controller/view/菜单/uci-defaults/i18n，静态资源取自同一份官方 tar 的 web/luci-static/quickstart，不重复打包。"
       },
-      "recipeHash": "8c512e4d51148d5354521d1f97e6abcda047c4fae785d0169e170bce28f6d66c",
-      "kernelLines": []
+      "recipeHash": "8c512e4d51148d5354521d1f97e6abcda047c4fae785d0169e170bce28f6d66c"
     },
     {
       "name": "luci-app-store",
@@ -305,8 +298,7 @@
         "title": "iStore 应用商店",
         "description": "官方 istoreos/istore 源码重建（MIT）。注意其 /bin/is-opkg 会用 apk --allow-untrusted 从 istore.istoreos.com 安装，本项目只发布软件包、不改变该运行时行为。"
       },
-      "recipeHash": "fdbe09071e0c6245e9658951563650dcbb42ecbfd4061c7f263af587a05f622a",
-      "kernelLines": []
+      "recipeHash": "fdbe09071e0c6245e9658951563650dcbb42ecbfd4061c7f263af587a05f622a"
     },
     {
       "name": "luci-lib-taskd",
@@ -327,8 +319,7 @@
         "status": "curated",
         "title": "iStore 任务库（LuCI）"
       },
-      "recipeHash": "d0c7cbd42a2d45b5a63e8764cd29a4ad9f14edd1378fa6a6a0f8dadaf1e69021",
-      "kernelLines": []
+      "recipeHash": "d0c7cbd42a2d45b5a63e8764cd29a4ad9f14edd1378fa6a6a0f8dadaf1e69021"
     },
     {
       "name": "luci-lib-xterm",
@@ -349,8 +340,7 @@
         "status": "curated",
         "title": "xterm.js 库（LuCI）"
       },
-      "recipeHash": "da0d2d173507c86f0247a2a0a89dd2d3e329aa112b21be29000b7a0be105e6ac",
-      "kernelLines": []
+      "recipeHash": "da0d2d173507c86f0247a2a0a89dd2d3e329aa112b21be29000b7a0be105e6ac"
     },
     {
       "name": "taskd",
@@ -371,8 +361,7 @@
         "status": "curated",
         "title": "taskd 后台任务管理"
       },
-      "recipeHash": "da9d20b8825bf23396023e5f4a026d73e6724429736a5f28b3f29793e647b6dc",
-      "kernelLines": []
+      "recipeHash": "da9d20b8825bf23396023e5f4a026d73e6724429736a5f28b3f29793e647b6dc"
     },
     {
       "name": "luci-app-partexp",
@@ -419,8 +408,7 @@
         "title": "网络测速（netspeedtest，自用）",
         "description": "上游 sirpdboy/luci-app-netspeedtest 被 GitHub 屏蔽，配方取自 op-packages@19a44706；publicAllowed=false，仅私有/自用镜像。"
       },
-      "recipeHash": "d55ba07db19926ac5541a62070bbcc42d73a37bcad0ca4f7925d7bdebe3c1afa",
-      "kernelLines": []
+      "recipeHash": "d55ba07db19926ac5541a62070bbcc42d73a37bcad0ca4f7925d7bdebe3c1afa"
     },
     {
       "name": "homebox",
@@ -442,8 +430,7 @@
         "title": "homebox 内网测速（预编译，自用）",
         "description": "预编译二进制（v1.0.1，amd64 musl），许可为专有；publicAllowed=false，仅私有/自用镜像，不得进入公开 feed。"
       },
-      "recipeHash": "b7417ba15b45315fb75e312c46bd8b4afb9b2b8dba8f3b15bf8223cc889e83d5",
-      "kernelLines": []
+      "recipeHash": "b7417ba15b45315fb75e312c46bd8b4afb9b2b8dba8f3b15bf8223cc889e83d5"
     },
     {
       "name": "ookla-speedtest",
@@ -465,8 +452,29 @@
         "title": "Ookla Speedtest CLI（预编译，自用）",
         "description": "官方 CLI（1.2.0），Ookla EULA 不允许再分发；publicAllowed=false，仅私有/自用镜像。"
       },
-      "recipeHash": "98e7943ac044b36eb5b74d22a14f34327cfc4580aa3910dee824913e70b934ba",
-      "kernelLines": []
+      "recipeHash": "98e7943ac044b36eb5b74d22a14f34327cfc4580aa3910dee824913e70b934ba"
+    },
+    {
+      "name": "luci-app-log-viewer",
+      "source": "extension",
+      "repo": "gSpotx2f/luci-app-log",
+      "ref": "b8539ff6b52c8ca4c90e94b33e69b5b288a9dcae",
+      "subdir": ".",
+      "pin": "b8539ff6b52c8ca4c90e94b33e69b5b288a9dcae",
+      "license": "MIT",
+      "publicAllowed": true,
+      "strategy": "rebuild",
+      "targets": [
+        "x86/64"
+      ],
+      "patches": [],
+      "recipe": "github:gSpotx2f/luci-app-log@b8539ff6b52c8ca4c90e94b33e69b5b288a9dcae/.",
+      "i18n": {
+        "status": "curated",
+        "title": "日志查看器（log-viewer）",
+        "description": "高级 syslog / 内核日志查看器（tail、搜索、过滤），上游 gSpotx2f/luci-app-log v1.5.0-r5，MIT；依赖 ucode + ucode-mod-fs。"
+      },
+      "recipeHash": "e5824e4112519189c5f31355734de0471ef40a59f55310c0468d0b28e734b6e1"
     }
   ]
 }
