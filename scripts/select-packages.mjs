@@ -3,10 +3,19 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-// The iStore stack (luci-app-store, luci-lib-taskd, luci-lib-xterm, taskd) is
-// built from istoreos/istore by the extension workflow now; keeping it here too
-// would publish one name from two feeds.
-const ALLOWED = ["luci-app-fwlive", "luci-app-substore"];
+// The supplement feed must keep serving everything it has ever served: devices
+// already point at /supplement/<base>/<target>/packages.adb, so dropping a name
+// here removes it from those devices (2026-11-22 regression). The iStore stack is
+// also rebuilt from istoreos/istore by the extension workflow; the two feeds
+// publish the same names and apk resolves by version, which is accepted.
+const ALLOWED = [
+  "luci-lib-xterm",
+  "taskd",
+  "luci-lib-taskd",
+  "luci-app-store",
+  "luci-app-substore",
+  "luci-app-fwlive",
+];
 
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 
