@@ -1,7 +1,5 @@
 luci-theme-aurora
-luci-app-openclash
 luci-app-mosdns
-luci-app-dockerman
 quickstart
 luci-app-quickstart
 luci-app-store
