@@ -209,7 +209,9 @@ const matrix = {
     subdir: entry.subdir,
     local: entry.local,
     binary: entry.binary,
-    strategy: entry.strategy,
+    // The matrix only needs to know whether this entry is built from a pinned
+    // prebuilt bundle; every other selected entry goes through the SDK build.
+    strategy: entry.binary ? "binary" : "rebuild",
     license: entry.license,
   })),
 };
