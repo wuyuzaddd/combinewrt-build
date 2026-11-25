@@ -208,7 +208,7 @@ jobs:
       - name: Fetch ${{ matrix.package }} sources
         # `local:` recipes live in this repository and are staged from the
         # checkout; every other entry is fetched from its pinned upstream commit.
-        if: matrix.local != true
+        if: matrix.local != true && matrix.strategy != 'binary'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/src"
