@@ -21,11 +21,13 @@ const entry = entries.find((item) => item.name === process.argv[2]);
 if (!entry) { console.error("package not in registry"); process.exit(1); }
 const b = entry.binary;
 if (!b) { console.error("registry entry has no binary block"); process.exit(1); }
-for (const key of ["url", "sha256", "apkPrefix", "version", "arch", "license"]) {
+for (const key of ["url", "sha256", "apkPrefix", "version", "arch"]) {
   if (typeof b[key] !== "string" || b[key].length === 0) { console.error(`binary.${key} is required`); process.exit(1); }
 }
+const license = typeof b.license === "string" && b.license.length > 0 ? b.license : entry.license;
+if (typeof license !== "string" || license.length === 0) { console.error("binary.license or entry licence is required"); process.exit(1); }
 const depends = Array.isArray(b.depends) ? b.depends.join(" ") : "";
-console.log([b.url, b.sha256, b.apkPrefix, b.name ?? entry.name, b.version, b.arch, b.license, depends, b.description ?? ""].join("\t"));
+console.log([b.url, b.sha256, b.apkPrefix, b.name ?? entry.name, b.version, b.arch, license, depends, b.description ?? ""].join("\t"));
 ' "$registry" "$package")
 
 IFS=$'\t' read -r url want_sha apk_prefix pkg_name version arch license depends description <<< "$info"
