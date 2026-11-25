@@ -25,14 +25,16 @@ define Package/luci-app-mosdns
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=LuCI Support for mosdns (prebuilt)
-  DEPENDS:=+mosdns +uclient-fetch +v2ray-geoip +v2ray-geosite +geo2txt +ucode
+  DEPENDS:=+mosdns-sbwml +uclient-fetch +v2ray-geoip +v2ray-geosite +geo2txt +ucode
   PKGARCH:=all
 endef
 
 define Build/Compile
 	mkdir -p $(PKG_BUILD_DIR)/payload
+	apk_file=$$(find $(PKG_BUILD_DIR) -maxdepth 3 -name 'luci-app-mosdns-*.apk' | head -n1); \
+	test -n "$$apk_file"; \
 	cd $(PKG_BUILD_DIR)/payload && \
-		$(STAGING_DIR_HOST)/bin/apk extract --allow-untrusted $(PKG_BUILD_DIR)/packages_ci/luci-app-mosdns-*.apk
+		$(STAGING_DIR_HOST)/bin/apk extract --allow-untrusted "$$apk_file"
 	rm -rf $(PKG_BUILD_DIR)/payload/lib/apk
 endef
 
