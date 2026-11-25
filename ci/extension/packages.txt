@@ -1,5 +1,4 @@
 luci-theme-aurora
-luci-app-mosdns
 quickstart
 luci-app-quickstart
 luci-app-store
@@ -13,4 +12,3 @@ ookla-speedtest
 luci-app-log-viewer
 linkease-app-entry
 fastnet
-mosdns-sbwml

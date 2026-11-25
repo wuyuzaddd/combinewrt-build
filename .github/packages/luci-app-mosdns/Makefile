@@ -29,12 +29,14 @@ define Package/luci-app-mosdns
   PKGARCH:=all
 endef
 
+# The release tarball unpacks with or without its top-level packages_ci/
+# directory depending on the unpack helper, so resolve the apk with make-time
+# wildcards instead of a shell glob.
+PKG_APK=$(firstword $(wildcard $(PKG_BUILD_DIR)/packages_ci/*.apk) $(wildcard $(PKG_BUILD_DIR)/*.apk))
 define Build/Compile
 	mkdir -p $(PKG_BUILD_DIR)/payload
-	apk_file=$$(find $(PKG_BUILD_DIR) -maxdepth 3 -name 'luci-app-mosdns-*.apk' | head -n1); \
-	test -n "$$apk_file"; \
 	cd $(PKG_BUILD_DIR)/payload && \
-		$(STAGING_DIR_HOST)/bin/apk extract --allow-untrusted "$$apk_file"
+		$(STAGING_DIR_HOST)/bin/apk extract --allow-untrusted $$(test -n "$(PKG_APK)" && echo "$(PKG_APK)" || echo "$(PKG_BUILD_DIR)/missing.apk")
 	rm -rf $(PKG_BUILD_DIR)/payload/lib/apk
 endef
 
