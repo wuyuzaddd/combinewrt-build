@@ -277,6 +277,12 @@ jobs:
           EXT_LICENSE: ${{ matrix.license }}
         run: |
           set -euo pipefail
+          if [ "${{ matrix.strategy }}" = "binary" ]; then
+            # Prebuilt ingestion: verify the pinned release bundle, extract the
+            # apk payload with apk-tools and sign a fresh package of our own.
+            scripts/repack-binary-package.sh "${{ matrix.package }}"
+            exit 0
+          fi
           if [ "${{ matrix.local }}" = "true" ]; then
             source_dir="$RUNNER_TEMP/pkg"
           elif [ "$EXT_SUBDIR" = "." ]; then

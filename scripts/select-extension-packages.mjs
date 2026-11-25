@@ -15,7 +15,7 @@ const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const NAME_PATTERN = /^[a-z0-9][a-z0-9+._-]*$/;
 const SAFE_PATH = /^(?:\.|[A-Za-z0-9_./+-]+)$/;
 const URL_PATTERN = /https?:\/\//i;
-const STRATEGIES = new Set(["prebuilt", "rebuild", "blocked"]);
+const STRATEGIES = new Set(["prebuilt", "rebuild", "binary", "blocked"]);
 // A `local:` recipe lives in this repository (`.github/packages/<name>`) instead
 // of an upstream checkout. It is only allowed for extension entries whose
 // upstream repo/ref still names the provenance we publish in the manifest.
@@ -93,11 +93,24 @@ for (const entry of entries) {
   }
   // A registry entry must never smuggle a third-party feed URL into a build.
   for (const [field, value] of Object.entries(entry)) {
+    // A binary entry pins its download in `binary.url`; that is the one allowed URL.
+    if (field === "binary") continue;
     if (typeof value === "string" && URL_PATTERN.test(value)) {
       errors.push(`${where}: ${field} must not contain a URL`);
     }
   }
-  if (entry.source === "extension") {
+  if (entry.source === "extension" && entry.strategy === "binary") {
+    const binary = entry.binary;
+    if (!binary || typeof binary !== "object") {
+      errors.push(`${where}: binary strategy requires a binary block`);
+    } else {
+      if (typeof binary.url !== "string" || !/^https:\/\//.test(binary.url)) errors.push(`${where}: binary.url must be https`);
+      if (typeof binary.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(binary.sha256)) errors.push(`${where}: binary.sha256 must be a 64 character sha256`);
+      if (typeof binary.apkPrefix !== "string" || binary.apkPrefix.length === 0) errors.push(`${where}: binary.apkPrefix is required`);
+      if (typeof binary.version !== "string" || binary.version.length === 0) errors.push(`${where}: binary.version is required`);
+      if (typeof binary.arch !== "string" || binary.arch.length === 0) errors.push(`${where}: binary.arch is required`);
+    }
+  } else if (entry.source === "extension") {
     if (typeof entry.repo !== "string" || !REPO_PATTERN.test(entry.repo)) {
       errors.push(`${where}: repo must be <owner>/<name>`);
     }
@@ -162,6 +175,7 @@ for (const name of requested) {
     recipe: entry.recipe,
     recipeHash: entry.recipeHash,
     local: entry.recipe.startsWith(LOCAL_RECIPE_PREFIX),
+    binary: entry.strategy === "binary",
     targets: entry.targets ?? [],
     kernelLines: entry.kernelLines ?? [],
   });
@@ -194,6 +208,8 @@ const matrix = {
     ref: entry.ref,
     subdir: entry.subdir,
     local: entry.local,
+    binary: entry.binary,
+    strategy: entry.strategy,
     license: entry.license,
   })),
 };

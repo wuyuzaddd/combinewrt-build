@@ -12,3 +12,5 @@ ookla-speedtest
 luci-app-log-viewer
 linkease-app-entry
 fastnet
+mosdns-sbwml
+luci-app-mosdns
